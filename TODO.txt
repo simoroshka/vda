@@ -1,0 +1,15 @@
+TODO
+- JSON or other way of saving and restoring the graph
+- graph class (use graph.js as an example)  https://dl.dropboxusercontent.com/u/4189520/GraphJS/graphjs.html
+- 
+
+
+
+
+DONE
++ responsive size of canvas
++ make a graph with fabric.js, study structure and available functions
++ make a mockup page, make sure that libraries connect and work
+---
++ choose canvas framework (fabric.js - provides interactive object model on top of canvas element)
++ choose appropriate drawing method (canvas/svg/...)
