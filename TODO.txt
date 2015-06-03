@@ -1,5 +1,5 @@
 TODO
-- JSON or other way of saving and restoring the graph
+- JSON or another way of saving and restoring the graph
 - graph class (use graph.js as an example)  https://dl.dropboxusercontent.com/u/4189520/GraphJS/graphjs.html
 - 
 
