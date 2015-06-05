@@ -1,90 +1,134 @@
-$(document).ready(function() {	
-    var canvas = this.__canvas = new fabric.Canvas('canvas', {
-        selection: false, 
-        renderOnAddRemove: false, //increases speed 
-        moveCursor: 'default', 
-        hoverCursor: 'default'
-    });    	
-	fabric.Object.prototype.originX = fabric.Object.prototype.originY = 'center';
+var VDA =(function($){
+	var vertices = [],
+		edges = [],
+		canvas = null,
+		context = null,
+        exampleGraph = null;
+		
+// the classes ---------------------------------------------------------
+	function Graph (vertices, edges) {
+		if(typeof vertices == "undefined"){ vertices = [] };
+        if(typeof vertices != "object"){ return false };
+        if(typeof edges == "undefined"){ edges = [] };
+        if(typeof edges != "object"){ return false };
+        this.vertices = vertices;
+        this.edges = edges;
+        this.x = 0;
+        this.y = 0;
+		
+        this.draw = function(){
+			edges.forEach(function(e) { e.draw(); });			
+			vertices.forEach(function(v) { v.draw(); });
+		};
 	
-	responsive();	
+	};
+	
+	function Vertex (id, value, x, y) {
+		if(typeof id != "number"){ return false };
+        if(typeof value != "number" && typeof value != "string"){ return false };
+        if(typeof x != "number" || typeof y != "number"){ return false };
+	
+        this.id = id;
+        this.value = value;
+        this.x = Math.round(x);
+        this.y = Math.round(y); 
+        //this.degree = 0;
+        //this.edges = [];
+        
+		this.shape = new fabric.Circle({
+			radius: value,
+			top: y - value,
+			left: x - value,
+			stroke: 'rgba(0,0,0,0.5)',
+			fill: 'rgba(250,250,250,1.0)'
+		});
+		console.log("created a vertex");
+		
+        this.draw = function() {
+			canvas.add(this.shape);
+			console.log("added circle")
+        };
+		
+	};
+	
+	function Edge (id, value, from, to) {
+		if(typeof id != "number"){ return false };
+        if(typeof value != "number" && typeof value != "string"){ value = "" };
+        if(typeof from != "object" || typeof to != "object"){ return false };
+        
+        this.id = id;
+        this.value = value;
+        this.from = from;
+        this.to = to;        
+        
+		this.shape = new fabric.Line(
+			[from.x, from.y,
+			to.x, to.y], {
+			fill: 'red',
+			stroke: 'red',
+			strokeWidth: 3      
+			}
+		);
+		console.log("created an edge");
+		
+        this.draw = function(){
+            canvas.add(this.shape);
+			console.log("added line");
+        };
+		
+	};
+	
+	
 
-    var line = makeLine([ 250, 125, 250, 175 ]),
-		line2 = makeLine([ 250, 175, 250, 250 ]),
-		line3 = makeLine([ 250, 250, 300, 350]),
-		line4 = makeLine([ 250, 250, 200, 350]),
-		line5 = makeLine([ 250, 175, 175, 225 ]),
-		line6 = makeLine([ 250, 175, 325, 225 ]);	
+// page layout ---------------------------------------------------------
+	function adjustCanvasSize() {
+		canvas.setDimensions({
+			width: $("#canvas-container").width(),
+			height: $("#canvas-container").height()
+		});
+	};
+	
+	$(window).resize(adjustCanvasSize);
 
-	canvas.add(line, line2, line3, line4, line5, line6);
+// initialising the document -------------------------------------------
+	$(document).ready(function() {
+		//initialize canvas as fabric object
+		canvas = new fabric.Canvas('canvas', {
+			selection: false, 
+			//renderOnAddRemove: false, //increases speed 
+			moveCursor: 'default', 
+			hoverCursor: 'default'
+		});   	
+		
+		adjustCanvasSize();
+                        
+        // Example
+        exampleGraph = makeExample();
+		exampleGraph.draw();
+		console.log("rendering canvas");
+        canvas.renderAll();
 
-	canvas.add(
-		makeCircle(line.get('x1'), line.get('y1'), null, line),
-		makeCircle(line.get('x2'), line.get('y2'), line, line2, line5, line6),
-		makeCircle(line2.get('x2'), line2.get('y2'), line2, line3, line4),
-		makeCircle(line3.get('x2'), line3.get('y2'), line3),
-		makeCircle(line4.get('x2'), line4.get('y2'), line4),
-		makeCircle(line5.get('x2'), line5.get('y2'), line5),
-		makeCircle(line6.get('x2'), line6.get('y2'), line6)
-    
-  );
-	canvas.renderAll();
-
-  canvas.on('object:moving', function(e) {
-    var p = e.target;
-    p.line1 && p.line1.set({ 'x2': p.left, 'y2': p.top });
-    p.line2 && p.line2.set({ 'x1': p.left, 'y1': p.top });
-    p.line3 && p.line3.set({ 'x1': p.left, 'y1': p.top });
-    p.line4 && p.line4.set({ 'x1': p.left, 'y1': p.top });
-    canvas.renderAll();
-  });
-
-function makeCircle(left, top, line1, line2, line3, line4) {
-    var c = new fabric.Circle({
-      left: left,
-      top: top,
-      strokeWidth: 2,
-      radius: 10,
-      fill: '#fff',
-      stroke: '#666'
-    });
-    c.hasBorders = false;
-
-    c.line1 = line1;
-    c.line2 = line2;
-    c.line3 = line3;
-    c.line4 = line4;
-
-    return c;
-  }
-
- function makeLine(coords) {
-    return new fabric.Line(coords, {
-      fill: 'red',
-      stroke: 'red',
-      strokeWidth: 2      
-    });
-  }
-  
-  
-
-//======================================================================
-//canvas page adjustments
-function responsive() {
-	var widthn = $("#canvas-container").width();
-    var heightn = $("#canvas-container").height();
-
-    canvas.setDimensions({
-        width: widthn,
-        height: heightn
-    });
-};
-
-$(window).resize(function() {
-	responsive();	
-});  
-  
-});
+	});
+// Graph example -------------------------------------------------------	
+    function makeExample () {
+        
+        //arrays
+        exVertices = [
+            new Vertex(1, 20, 100, 100),
+            new Vertex(2, 30, 200, 100),
+			new Vertex(3, 25, 100, 200)			
+        ];
+        exEdges = [
+            new Edge(4, "", exVertices[0], exVertices[1]),
+			new Edge(5, "", exVertices[1], exVertices[2]),
+			new Edge(6, "", exVertices[2], exVertices[0])
+			
+        ];
+        
+		console.log("creating example graph");
+        return new Graph(exVertices, exEdges);
+    };
 
 
-
+	
+})(jQuery)

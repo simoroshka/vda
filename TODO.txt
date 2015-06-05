@@ -1,12 +1,15 @@
 TODO
-- JSON or other way of saving and restoring the graph
-- graph class (use graph.js as an example)  https://dl.dropboxusercontent.com/u/4189520/GraphJS/graphjs.html
-- 
-
-
+- JSON or another way of saving and restoring the graph
+- adding new vertices and edges
+- deciding on functionality
+- design
+- adding animation
 
 
 DONE
++ graph visualization in the canvas
++ graph class (use graph.js as an example)  https://dl.dropboxusercontent.com/u/4189520/GraphJS/graphjs.html
+---
 + responsive size of canvas
 + make a graph with fabric.js, study structure and available functions
 + make a mockup page, make sure that libraries connect and work
