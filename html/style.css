@@ -1,7 +1,9 @@
 .container {
 	margin: 20px auto;
 }
-
+#canvas-container {
+	height: auto;
+}
 #canvas {
 	width: 100%;
 	height: auto;
