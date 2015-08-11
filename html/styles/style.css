@@ -1,0 +1,26 @@
+.container {
+	margin: 20px auto;
+	padding-right: 40px;
+}
+.slider {
+	margin-left: 20px;
+}
+#JSONinput, #JSONext {
+	height: 150px;
+	margin-bottom: 5px;
+}
+#canvas-container {
+	height: auto;
+	margin-bottom: 20px;
+}
+#canvas {
+	width: 100%;
+	height: auto;
+	border: 1px solid #ddd;		
+}
+.tab-pane {
+	margin-top: 30px;
+}
+#info , #converged {
+	display:none;
+}
