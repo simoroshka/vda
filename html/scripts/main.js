@@ -41,11 +41,13 @@ var VDA =(function($){
 						  //to another (for animation)
 		
 	    statesToTime = {},  //map states to time stamps (simulation steps)
-		timeStamp = 0,		//the step of the simulation
+		timeStamp = 0,		//the current step of the simulation
 		converged = false,
-		cycleStart = 0;    
-		cycleLength = 0;
-		tokenAmount = 0;
+		cycleStart = 0,    
+		cycleLength = 0, //the legth of the cycle (steps)
+		cycleColors = ['#dc143c', '#008000', '#ff4500', '#800080', '#800000', '#0000cd', '#2f4f4f', '#8b0000', '#4169e1', '#808000'],
+		loops = 0,		//the number of closed paths.
+		drawnPoints = [];
 
 // calculate appropriate token size	and appearance
 	setTokenSize = function (amount) {
@@ -100,6 +102,7 @@ var VDA =(function($){
 		
 		setTokenSize(total);
 		
+		//will be recalculated as needed
 		tokenRadiuses = [];
 	}
 	
@@ -115,6 +118,7 @@ var VDA =(function($){
 		return (d-c)/(b-c);
 	}
 
+//TODO: move to the graph class
 	//get the maximum vertex degree in the graph
 	getMaxDegree = function () {
 		var max = 0;
@@ -129,7 +133,7 @@ var VDA =(function($){
 	}
 
 	
-// detecting cycles
+// detecting cycles --------------------------------------------------------------
 	getStateString = function () {
 		var state = "";
 		var v = graph.vertices.length;
@@ -155,12 +159,14 @@ var VDA =(function($){
 			
 			mapInOut();
 			calcConnectionPoints();
-			drawVConnections();
 			
+			//drawVConnections();
+			drawCycles();
 			
 			var str = 'Simulation converged after ' + 
-					  cycleStart + ' steps. ' +
-					  'The length of the cycle is ' + cycleLength + ' steps.';
+					  cycleStart + ' steps. <br/>' +
+					  'The length of the cycle: ' + cycleLength + ' steps. <br/>' +
+					  'Number of loops: ' + loops + '.';
 			$('#converged').html(str);
 			$('#converged').slideToggle();
 			
@@ -172,7 +178,7 @@ var VDA =(function($){
 	mapInOut = function () {
 		graph.vertices.forEach(function(v) { v.pairFlows(); });
 	}
-		
+			
 	rememberPath = function (from, to, tokens, timeStamp) {
 		
 		var toID = from.neighbours.indexOf(to); //get the id of the neighbors
@@ -188,36 +194,124 @@ var VDA =(function($){
 		to.incoming[fromID][timeStamp] = tokens;
 	}
 	
-	//drawing cycles
+	
+	//drawing cycles -----------------------------------------------------------------------
 	
 	
 	//find the next vertex in this cycle and draw the connection along the edge
-	drawToNext = function (fromVertex, edgeN) {
-		var toVertex;
+	drawCycles = function () {
+		
+		drawnPoints = [];
+		loops = 0;
+		var segments = graph.edges.length * 4;
+					
+		for (var i = 0; i < graph.vertices.length; i++) {
+			var v = graph.vertices[i];
+				
+			//find a starting point for a cycle
+			var start = null;				
+			for (var j = 0; j < v.degree; j++){
+				//if the point is not yet used for drawing, take it as a start point
+				if (drawnPoints.indexOf(v.inConnections[j]) == -1) {
+					start = v.inConnections[j];
+					var next = {vertex: v, 
+							    edgeN: j};
+					break;
+				}
+			}
+				
+			//if found - draw the cycle, otherwise move to the next vertex
+			if (start != null) {
+	
+				do {
+					drawInnerConnection(next.vertex, next.edgeN);		
+					next = drawOuterConnection(next.vertex, next.vertex.mapInOut[next.edgeN]);
+					segments -= 2;
+					canvas.renderAll();
+				} while (next.vertex.inConnections[next.edgeN] != start);
+				loops++;
+			}
+			//if we have drawn all the cycles already
+			if (segments === 0) {
+				if (loops === 1) {
+					console.log('there is 1 loop');
+				}
+				else {
+					console.log('there are ' + loops + ' loops');
+				}
+				
+			}
+		}
+	}
+	
+	drawInnerConnection = function (vertex, conN) {
+		
+		var from = vertex.inConnections[conN];
+		var to = vertex.outConnections[vertex.mapInOut[conN]];
+		
+		drawnPoints.push(from);						
+						
+		var middle = {};
+		middle.x = vertex.x + offsetX - 1;
+		middle.y = vertex.y + offsetY - 1;
+				
+		drawConnection(from, to, middle);		
+	}
+	
+	drawOuterConnection = function (fromVertex, edgeN) {
+		var next = {};
 		var edge = fromVertex.edges[edgeN];
 		
 		//find the next vertex
 		if (edge.from === fromVertex) {
-			toVertex = edge.to;
+			next.vertex = edge.to;
 		}
 		else {
-			toVertex = edge.from;
+			next.vertex = edge.from;
 		}
 		
 		//get edge number in the next vertex array of edges
-		nextEdgeN = toVertex.getEdgeN(edge);
+		next.edgeN = next.vertex.getEdgeN(edge);
 		
 		//get the connection point for drawing
-		toVertex.inConnections[nextEdgeN];
+		//next.vertex.inConnections[next.edgeN];
 		
 		//draw the line
 		drawConnection(fromVertex.outConnections[edgeN], 
-					   toVertex.inConnections[nextEdgeN],
-					   calcMiddle(fromVertex.outConnections[edgeN],toVertex.inConnections[nextEdgeN]));
+					   next.vertex.inConnections[next.edgeN],
+					   calcMiddle(fromVertex.outConnections[edgeN],next.vertex.inConnections[next.edgeN]));
 		
+		
+		return next;
 	}
 	
-	connectionPair = function (vertex, edgeN, theta) {
+	//draw a path segment
+	drawConnection = function (from, to, middle) {
+		//var middle = calcMiddle(from, to);
+		var line = new fabric.Path('M ' + from.x + ' ' + from.y + ' Q ' + middle.x + ', ' + middle.y + ', '+ to.x + ', ' + to.y, { fill: '', stroke: cycleColors[(loops + 1) % cycleColors.length] });
+		line.selectable = false;
+		canvas.add(line);
+	}
+	
+	//draw all path connections inside a vertex
+	drawVConnections = function () {
+		for (var i = 0; i < graph.vertices.length; i++) {
+			var v = graph.vertices[i];
+			for (var j = 0; j < v.degree; j++) {
+				var from = v.inConnections[j];
+				var to = v.outConnections[v.mapInOut[j]];
+				var middle = {};
+				middle.x = v.x + offsetX - 1;
+				middle.y = v.y + offsetY - 1;
+				
+				drawConnection(from, to, middle);			
+				drawOuterConnection(v, v.mapInOut[j]);
+			}
+		}
+	}
+//TODO: move to the vertex class?
+	//calculate coordinates of one connection pair and save them
+	calcConnectionPair = function (vertex, edgeN, theta) {
 		var x1, y1, x2, y2, alpha, r, t;
 		var p1 = {}, p2 = {};
 		
@@ -242,38 +336,23 @@ var VDA =(function($){
 		p2.x = r * Math.cos(alpha - theta) + x1;
 		p2.y = r * Math.sin(alpha - theta) + y1;
 		
-		/*
-		canvas.add(new fabric.Circle({
-			top: p1.y,
-			left: p1.x,
-			fill: 'red',
-			radius: 2
-		}));
-		
-		canvas.add(new fabric.Circle({
-			top: p2.y,
-			left: p2.x,
-			fill: 'green',
-			radius: 2
-		}));*/
-
-		
 		vertex.inConnections[edgeN] = p1;
 		vertex.outConnections[edgeN] = p2;		
 		
 	}
+	
+	//calculate coordiates of all connection points
 	calcConnectionPoints = function () {
 			var v = graph.vertices.length;
 			for (var i = 0; i < v; i++) {
 				for (var j = 0; j < graph.vertices[i].degree; j++) {
-					connectionPair(graph.vertices[i], j, 0.25);
+					calcConnectionPair(graph.vertices[i], j, 0.25);
 				}
 			}
 	}
-	//calculate middle point for cycle curve between vertices
+	//calculate middle point for path curve between vertices
 	calcMiddle = function (from, to) {
 		var middle = {};
-		
 		var x1, y1, x2, y2, alpha, r, t;
 		var p = {};
 		
@@ -283,7 +362,7 @@ var VDA =(function($){
 		x2 = to.x;
 		y2 = to.y;
 		
-		//middle of the line
+		//the middle of the line
 		p.x = Math.abs(x1 + x2)/2;
 		p.y = Math.abs(y1 + y2)/2;
 		
@@ -304,40 +383,7 @@ var VDA =(function($){
 		return middle;
 	}
 	
-	drawConnection = function (from, to, middle) {
-		var line = new fabric.Path('M ' + from.x + ' ' + from.y + ' Q ' + middle.x + ', ' + middle.y + ', '+ to.x + ', ' + to.y, { fill: '', stroke: 'black' });
-		line.selectable = false;
-		canvas.add(line);
-	}
-	drawConnectionArc = function (from, to) {
-		var arc = new fabric.Path('M ' + from.x + ' ' + from.y + ' A 10 10 0 0 0 ' + to.x + ' ' + to.y, {fill: '', stroke: 'red'});
-		arc.selectable = false;
-		canvas.add(arc);
-	}
-	drawConnectionLine = function (from, to) {
-		var line = new fabric.Line(
-			[from.x, from.y,to.x,to.y],{
-			stroke: 'black'
-		})
-		line.selectable = false;
-		canvas.add(line);
-	}
 	
-	drawVConnections = function () {
-		for (var i = 0; i < graph.vertices.length; i++) {
-			var v = graph.vertices[i];
-			for (var j = 0; j < v.degree; j++) {
-				var from = v.inConnections[j];
-				var to = v.outConnections[v.mapInOut[j]];
-				var middle = {};
-				middle.x = v.x + offsetX - 1;
-				middle.y = v.y + offsetY - 1;
-				
-				drawConnection(from, to, middle);			
-				drawToNext(v, v.mapInOut[j]);
-			}
-		}
-	}
 		
 // the classes ---------------------------------------------------------
 	Graph = function (vertices, edges) {
@@ -502,7 +548,7 @@ var VDA =(function($){
 			for (var i = 0; i < this.neighbours.length; i++) {
 				this.neighbours[i].calcVConnections();
 			}
-			drawVConnections();
+			drawCycles();
 
 		}
 		
@@ -510,16 +556,12 @@ var VDA =(function($){
 	}
 	Vertex.prototype.calcVConnections = function () {
 		for (var i = 0; i < this.edges.length; i++) {
-			connectionPair(this, i, 0.25);
+			calcConnectionPair(this, i, 0.25);
 			
 		}
 	}
 	
 	Vertex.prototype.pairFlows = function() {
-		
-		if (this.id == 3) {
-				console.log("something strange");
-		}
 		
 		for (var inc = 0; inc < this.degree; inc++) {
 			for (var out = 0; out < this.degree; out++) {
@@ -761,6 +803,8 @@ var VDA =(function($){
 	
 	// on play - start the simulation
 	play = function() {		
+		if (graphTokens.reduce(function(a, b) { return a + b; }, 0) === 0) return;
+	
 		$("#playBtn").addClass("disabled");
 		$("#pauseBtn").removeClass("disabled");
 		$("#tokenBtn").addClass("disabled");
@@ -1137,7 +1181,12 @@ var VDA =(function($){
 			}
 		}).on('change', changeSpeed)
 		  .on('slideStop', restartSimulation);
-		
+		$("#create3x3").click(3, createExample);
+		$("#create4x4").click(4, createExample);
+		$("#create5x5").click(5, createExample);
+		$("#create6x6").click(6, createExample);
+		$("#create8x8").click(8, createExample);
+		$("#create10x10").click(10, createExample);
 		
 		//initialize canvas as a fabric object
 		canvas = new fabric.CanvasEx('canvas', {
@@ -1316,21 +1365,32 @@ var VDA =(function($){
 	}
 	
 // Graph example -------------------------------------------------------	
-    makeExample = function () {
-        
-		offsetX = 50;
-		offsetY = 50;
+	createExample = function (param) {
+		graph = makeExample(param.data);
+		initializeTokens();
+		
+		graph.draw();
+        canvas.renderAll();
+		displayJSON();
+	}
+	
+    makeExample = function (n) {
+        if (typeof n === 'undefined') n = 5;
+		else if (typeof n === 'object') n = n.data;
+		var size = Math.min ($("#canvas-container").width(), 
+							 $("#canvas-container").height());
+		
+		offsetX = offsetY = size * 0.5 / n;
 		
 		var vertices = [];
 		var edges = [];
 		var eID = 0;
-		nodeRadius = 20;
-		
-		var n = 5;
+		nodeRadius = size * 0.2 / n;
+		var distance = (size - offsetX * 2) / (n - 1);
 
 		for (var i = 0; i < n; i++) {
 			for (var j = 0; j < n; j++) {
-				vertices.push(new Vertex(n*i+j, 90*i, 90*j));
+				vertices.push(new Vertex(n*i+j, distance*i, distance*j));
 				if (j > 0) {
 					edges.push(new Edge(eID++, vertices[n*i + j-1], vertices[n*i + j]));
 				}
@@ -1524,6 +1584,7 @@ var VDA =(function($){
 			abortEdgeDrawing();
 		}
 		$("#info").slideToggle();
+		$("#token-info").slideToggle();
 		$("#sim-form").slideToggle();
 			
 		canvas.renderAll();

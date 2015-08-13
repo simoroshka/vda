@@ -34,11 +34,12 @@
 			<ul class="nav nav-tabs">
 				<li class="active"><a data-toggle="tab" href="#home">Simulation</a></li>
 				<li><a data-toggle="tab" href="#menu1">Export/Import</a></li>
-				<li><a data-toggle="tab" href="#menu2">Instructions</a></li>			  
+				<li><a data-toggle="tab" href="#menu2">Info</a></li>			  
 			</ul>
 
 			<div class="tab-content">
 				<div id="home" class="tab-pane fade in active">
+					<div id="converged" class="alert alert-success"></div>
 					<div id="sim-form">
 						<div class="form-group">
 							<button class="btn btn-default" id="tokenBtn">Place tokens randomly</button>
@@ -54,11 +55,10 @@
 							<input type="text" class="span2" value="10" data-slider-min="1" data-slider-max="20" data-slider-step="1" id="speedSlider"/>
 						</div>				
 						<div class="alert alert-info">Press Shift to edit the graph</div>
-					</div>
-					<div id="converged" class="alert alert-success"></div>
-					<div id="info" class="alert alert-info">
-						<h4>Graph editing mode</h4>
 						
+					</div>
+					<div id="info" class="alert alert-info">
+						<h4>Graph editing</h4>						
 						<ul>
 							<li>Double click on the canvas to add new vertex. </li>
 							<li>Double click on a vertex to start new edge. Click once on another vertex to connect the edge.</li>
@@ -66,9 +66,25 @@
 							<li>Drag a vertex to move it.</li>
 						</ul>
 					</div>
+					<div id="token-info" class="alert alert-info">
+						<h4>Token editing</h4>
+						<ul>
+							<li>Double click on a vertex to add a token.</li>
+							<li>Drag a token group to change its size.</li>
+							<li>Right click to delete token group.</li>
+						</ul>
+					</div>
 
 			    </div>
 			    <div id="menu1" class="tab-pane">
+					<div class="form-group col-md-12"> 
+						<button class="btn btn-default" id="create3x3">3x3</button>
+						<button class="btn btn-default" id="create4x4">4x4</button>
+						<button class="btn btn-default" id="create5x5">5x5</button>
+						<button class="btn btn-default" id="create6x6">6x6</button>
+						<button class="btn btn-default" id="create8x8">8x8</button>
+						<button class="btn btn-default" id="create10x10">10x10</button>
+					</div>
 					<div class="form-group col-md-6">
 						<textarea class="form-control" id="JSONinput"></textarea>
 						<button class="btn btn-default" id="createBtn">Create graph from JSON</button>
@@ -79,31 +95,13 @@
 					</div>
 			    </div>		 
 				<div id="menu2" class="tab-pane fade">
-					<h4>Keyboard shortcuts</h4>
-					<ul>
-						<li>Shift - graph editing mode.</li>
-						<li>T - place tokens randomly.</li>
-						<li>P - play/pause.</li>
-					</ul>
-					<h4>Graph Editing mode</h4>
-					<ul>
-						<li>Double click on the canvas to add new vertex. </li>
-						<li>Double click on a vertex to start new edge. Click once on another vertex to connect the edge.</li>
-						<li>Right click to delete vertices or edges.</li>
-						<li>Drag a vertex to move it.</li>
-					</ul>
-					<h4>Token editing</h4>
-					<ul>
-						<li>Double click on a vertex to add a token.</li>
-						<li>Drag a token group to change its size.</li>
-						<li>Right click to delete token group.</li>
-					</ul>
-					<br/>
-					<p>To be fixed</p>
-					<ul>
-						<li>Scaling of the graph</li>
-						<li>Double click doesn't work in firefox</li>
-					</ul>
+				
+					<div class="alert alert-info">
+						<h4>A simulation of the rotor-router algorithm for the token distribution in a network. </h4>
+						<p>By Anna Kruglaia. Aalto University, Department of Computer Science.</p>
+						<p><a href="https://github.com/simoroshka/vda">GitHub</a></p>
+					</div>
+					
 			    </div>		 
 			 
 			</div>
