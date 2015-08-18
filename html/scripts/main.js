@@ -8,38 +8,40 @@ pagehide:!0};if(a=a||window.event)a.hidden=a.type in b?b[a.type]:document[$.winF
 /*    End Plugin      */
 
 var VDA =(function($){
+	
 	var canvas = null,
 		context = null,
         graph = null,
-		offsetX = 50,
-		offsetY = 50,
-		interval = null,
+		interval = null,   //timer
 		playing = false;
 	
+	// for graph editing mode
 	var mousePressed = false,
 		selectedVertex = null,
 		prevPos = 0,
-		clickedTarget = null,
-		
+		clickedTarget = null,		
 		shiftPressed = false,
-		startVertex = null, //for manual edge drawing
+		startVertex = null, //for edge drawing
 		drawLine = false,
 		newEdge = null;
 		
-		
-	var nodeRadius = 15,	
+	// drawing parameters
+	var nodeRadius = 15,	//default, changes according to the grid size
 		edgeWidth = 2,
-		tokenSize = 20,
-		tokenSpeed = 3,
-		tokenColor = 'red';
+		tokenSize = 0,
+		tokenMinSize = 50,
+		tokenSpeed = 2,
+		tokenColor = 'red', //changes in SetTokenColor according to the scale;
 		tokenRadiuses = []; //memoization for better performance
-		
+	
+	// for token propagation
 	var totalVisits = [], //total visits for each vertex
 		graphTokens = [], //tokens currently in each vertex
 		newTokens = [],	  //token positions for the next step	
 		moveTokens = [],  //how many tokens move from each vertex -
 						  //to another (for animation)
-		
+	
+	// for cycle detection and drawing
 	    statesToTime = {},  //map states to time stamps (simulation steps)
 		timeStamp = 0,		//the current step of the simulation
 		converged = false,
@@ -49,648 +51,14 @@ var VDA =(function($){
 		loops = 0,		//the number of closed paths.
 		drawnPoints = [];
 
-// calculate appropriate token size	and appearance
-	setTokenSize = function (amount) {
-		var k = amount;
-		var n = graph.vertices.length;
-		var m = graph.edges.length;
-		var maxDeg = getMaxDegree();
 		
-		var maxTokens = k / (2 * m) + maxDeg;
-		
-		tokenSize = Math.PI * nodeRadius * nodeRadius / (maxTokens * 3);
-		if (tokenSize > 20) tokenSize = 20;
-		
-		setTokenColor(amount);
-		
-	}	
-	// change color of tokens according to the scaling factor
-	setTokenColor = function (amount) {
-		
-		var percentFade = toLogScale(amount, 10, 1000000);
-		
-		var startColor = {
-			red: 255,
-			green: 0,
-			blue: 0
-		};
-		var endColor = {
-			red: 0, 
-			green: 10,
-			blue: 80
-		};
-		
-		var diffRed = endColor.red - startColor.red;
-		var diffGreen = endColor.green - startColor.green;
-		var diffBlue = endColor.blue - startColor.blue;
-
-		diffRed = (diffRed * percentFade) + startColor.red;
-		diffGreen = (diffGreen * percentFade) + startColor.green;
-		diffBlue = (diffBlue * percentFade) + startColor.blue;
-		
-		tokenColor = 'rgba(' + Math.ceil(diffRed) + ',' + Math.ceil(diffGreen) + ',' + Math.ceil(diffBlue) + ',1.0)';
-		
-		graph.vertices.forEach(function(v) { v.changeToken(); });
-	}
+//----------------------------------------------------------------------------
+// simulating rotor-router algorithm
+//----------------------------------------------------------------------------
 	
-	//scale-size update if the number of tokens has been changed
-	updateGraphTokens = function () {
-		var total = 0;
-		for (var i = 0; i < graphTokens.length; i++) {
-			total += graphTokens[i];
-		}
-		
-		setTokenSize(total);
-		
-		//will be recalculated as needed
-		tokenRadiuses = [];
-	}
-	
-	//amount to percentage on logarithmic scale
-	toLogScale = function(a, min, max) {
-		if(max === min)
-			return 0;
-	
-		var b = Math.log(max),
-			c = (0 === min ? 0 : Math.log(min)),
-			d = (0 === a ? 0 : Math.log(a));
-			
-		return (d-c)/(b-c);
-	}
-
-//TODO: move to the graph class
-	//get the maximum vertex degree in the graph
-	getMaxDegree = function () {
-		var max = 0;
-		
-		for (var i = 0; i < graph.vertices.length; i++) {
-			if (graph.vertices[i].degree > max) {
-				max = graph.vertices[i].degree;
-			}
-		}
-		
-		return max;
-	}
-
-	
-// detecting cycles --------------------------------------------------------------
-	getStateString = function () {
-		var state = "";
-		var v = graph.vertices.length;
-		
-		for (var i = 0; i < v; i++) {
-			state += graphTokens[i];
-			state += totalVisits[i] % graph.vertices[i].degree;
-		}
-		
-		return state;		
-	}
-	
-	detectCycles = function () {
-		var state = getStateString();
-		if (typeof statesToTime[state] === 'undefined') {
-			statesToTime[state] = timeStamp;
-		}
-		else {
-			toggleEditingMode();
-			converged = true;
-			cycleStart = statesToTime[state];
-			cycleLength = timeStamp - statesToTime[state];
-			
-			mapInOut();
-			calcConnectionPoints();
-			
-			//drawVConnections();
-			drawCycles();
-			
-			var str = 'Simulation converged after ' + 
-					  cycleStart + ' steps. <br/>' +
-					  'The length of the cycle: ' + cycleLength + ' steps. <br/>' +
-					  'Number of loops: ' + loops + '.';
-			$('#converged').html(str);
-			$('#converged').slideToggle();
-			
-			
-		}
-	}
-	
-	// find pairs of incoming+outcoming flows. 
-	mapInOut = function () {
-		graph.vertices.forEach(function(v) { v.pairFlows(); });
-	}
-			
-	rememberPath = function (from, to, tokens, timeStamp) {
-		
-		var toID = from.neighbours.indexOf(to); //get the id of the neighbors
-		var fromID = to.neighbours.indexOf(from);
-		
-		if (typeof from.outcoming[toID] === 'undefined') {
-			from.outcoming[toID] = [];
-		}
-		if (typeof to.incoming[fromID] === 'undefined') {
-			to.incoming[fromID] = [];
-		}
-		from.outcoming[toID][timeStamp] = tokens;
-		to.incoming[fromID][timeStamp] = tokens;
-	}
-	
-	
-	//drawing cycles -----------------------------------------------------------------------
-	
-	
-	//find the next vertex in this cycle and draw the connection along the edge
-	drawCycles = function () {
-		
-		drawnPoints = [];
-		loops = 0;
-		var segments = graph.edges.length * 4;
-					
-		for (var i = 0; i < graph.vertices.length; i++) {
-			var v = graph.vertices[i];
-				
-			//find a starting point for a cycle
-			var start = null;				
-			for (var j = 0; j < v.degree; j++){
-				//if the point is not yet used for drawing, take it as a start point
-				if (drawnPoints.indexOf(v.inConnections[j]) == -1) {
-					start = v.inConnections[j];
-					var next = {vertex: v, 
-							    edgeN: j};
-					break;
-				}
-			}
-				
-			//if found - draw the cycle, otherwise move to the next vertex
-			if (start != null) {
-	
-				do {
-					drawInnerConnection(next.vertex, next.edgeN);		
-					next = drawOuterConnection(next.vertex, next.vertex.mapInOut[next.edgeN]);
-					segments -= 2;
-					canvas.renderAll();
-				} while (next.vertex.inConnections[next.edgeN] != start);
-				loops++;
-			}
-			//if we have drawn all the cycles already
-			if (segments === 0) {
-				if (loops === 1) {
-					console.log('there is 1 loop');
-				}
-				else {
-					console.log('there are ' + loops + ' loops');
-				}
-				
-			}
-		}
-	}
-	
-	drawInnerConnection = function (vertex, conN) {
-		
-		var from = vertex.inConnections[conN];
-		var to = vertex.outConnections[vertex.mapInOut[conN]];
-		
-		drawnPoints.push(from);						
-						
-		var middle = {};
-		middle.x = vertex.x + offsetX - 1;
-		middle.y = vertex.y + offsetY - 1;
-				
-		drawConnection(from, to, middle);		
-	}
-	
-	drawOuterConnection = function (fromVertex, edgeN) {
-		var next = {};
-		var edge = fromVertex.edges[edgeN];
-		
-		//find the next vertex
-		if (edge.from === fromVertex) {
-			next.vertex = edge.to;
-		}
-		else {
-			next.vertex = edge.from;
-		}
-		
-		//get edge number in the next vertex array of edges
-		next.edgeN = next.vertex.getEdgeN(edge);
-		
-		//get the connection point for drawing
-		//next.vertex.inConnections[next.edgeN];
-		
-		//draw the line
-		drawConnection(fromVertex.outConnections[edgeN], 
-					   next.vertex.inConnections[next.edgeN],
-					   calcMiddle(fromVertex.outConnections[edgeN],next.vertex.inConnections[next.edgeN]));
-		
-		
-		return next;
-	}
-	
-	//draw a path segment
-	drawConnection = function (from, to, middle) {
-		//var middle = calcMiddle(from, to);
-		var line = new fabric.Path('M ' + from.x + ' ' + from.y + ' Q ' + middle.x + ', ' + middle.y + ', '+ to.x + ', ' + to.y, { fill: '', stroke: cycleColors[(loops + 1) % cycleColors.length] });
-		line.selectable = false;
-		canvas.add(line);
-	}
-	
-	//draw all path connections inside a vertex
-	drawVConnections = function () {
-		for (var i = 0; i < graph.vertices.length; i++) {
-			var v = graph.vertices[i];
-			for (var j = 0; j < v.degree; j++) {
-				var from = v.inConnections[j];
-				var to = v.outConnections[v.mapInOut[j]];
-				var middle = {};
-				middle.x = v.x + offsetX - 1;
-				middle.y = v.y + offsetY - 1;
-				
-				drawConnection(from, to, middle);			
-				drawOuterConnection(v, v.mapInOut[j]);
-			}
-		}
-	}
-//TODO: move to the vertex class?
-	//calculate coordinates of one connection pair and save them
-	calcConnectionPair = function (vertex, edgeN, theta) {
-		var x1, y1, x2, y2, alpha, r, t;
-		var p1 = {}, p2 = {};
-		
-		x1 = vertex.x + offsetX; 		
-		y1 = vertex.y + offsetY;
-				
-		r = nodeRadius * 1.3;
-		x2 = vertex.neighbours[edgeN].x + offsetX;
-		y2 = vertex.neighbours[edgeN].y + offsetY;	
-
-		t = Math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1));
-				
-		alpha = Math.acos((x2 - x1)/t);
-		if (Math.asin((y2 - y1)/t) < 0) {
-				alpha *= -1;
-		}
-		
-		
-		p1.x = r * Math.cos(alpha + theta) + x1;
-		p1.y = r * Math.sin(alpha + theta) + y1;
-			
-		p2.x = r * Math.cos(alpha - theta) + x1;
-		p2.y = r * Math.sin(alpha - theta) + y1;
-		
-		vertex.inConnections[edgeN] = p1;
-		vertex.outConnections[edgeN] = p2;		
-		
-	}
-	
-	//calculate coordiates of all connection points
-	calcConnectionPoints = function () {
-			var v = graph.vertices.length;
-			for (var i = 0; i < v; i++) {
-				for (var j = 0; j < graph.vertices[i].degree; j++) {
-					calcConnectionPair(graph.vertices[i], j, 0.25);
-				}
-			}
-	}
-	//calculate middle point for path curve between vertices
-	calcMiddle = function (from, to) {
-		var middle = {};
-		var x1, y1, x2, y2, alpha, r, t;
-		var p = {};
-		
-		//shortcuts
-		x1 = from.x;
-		y1 = from.y;
-		x2 = to.x;
-		y2 = to.y;
-		
-		//the middle of the line
-		p.x = Math.abs(x1 + x2)/2;
-		p.y = Math.abs(y1 + y2)/2;
-		
-		//calculate the line's slope angle
-		t = Math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1));				
-		alpha = Math.acos((x2 - x1)/t);
-		if (Math.asin((y2 - y1)/t) < 0) {
-				alpha *= -1;
-		}
-		
-		//curvature depends on the length of the line 
-		r = t * 0.1;
-		
-		//calculate coordinates (rotate 90 degree to the left)
-		middle.x = r * Math.cos(alpha - Math.PI / 2) + p.x;
-		middle.y = r * Math.sin(alpha - Math.PI / 2) + p.y;
-
-		return middle;
-	}
-	
-	
-		
-// the classes ---------------------------------------------------------
-	Graph = function (vertices, edges) {
-		if(typeof vertices == "undefined"){ vertices = [] };
-        if(typeof vertices != "object"){ return false };
-        if(typeof edges == "undefined"){ edges = [] };
-        if(typeof edges != "object"){ return false };
-        
-		this.vertices = vertices;
-        this.edges = edges;		
-		
-	};
-	Graph.prototype.draw = function(){			
-			canvas.clear();
-			this.edges.forEach(function(e) { e.draw(); });			
-			this.vertices.forEach(function(v) { v.draw(); });
-		};
-	// re-enumerate vertices starting from a given position
-    // 	so that IDs are continuous. 
-	Graph.prototype.reNumber = function(id) {		
-		var length = this.vertices.length;		
-		for (var i = id; id < length; id++) {
-			this.vertices[id].id = id;			
-		}	
-	}
-	Graph.prototype.addEdge = function(from, to) {
-		var edge = new Edge (this.edges.length, from, to);
-		this.edges.push(edge);
-		
-		resetSimulation();
-	}
-	
-	Vertex = function (id, x, y) {
-		if(typeof id != "number"){ return false };
-        if(typeof x != "number" || typeof y != "number"){ return false };
-	
-        this.id = id;        
-		this.x = x;
-        this.y = y; 
-		
-        this.degree = 0;
-        this.edges = [];
-		this.neighbours = [];
-		
-		this.tokens = 0;
-		this.visited = 0;
-		
-		this.incoming = [];
-		this.outcoming = [];
-		this.mapInOut = [];
-		this.inConnections = [];
-		this.outConnections = [];
-        
-		// creating fabric shape for the vertex
-		this.shape = new fabric.Circle({
-			radius: nodeRadius,
-			top: y - nodeRadius + offsetY,
-			left: x - nodeRadius + offsetX,
-			stroke: 'rgba(0,0,0,0.5)',
-			strokeWidth: 2,
-			fill: 'rgba(250,250,250,1.0)',			
-			hasControls: false,
-			hasBorders: false,	
-			selectable: shiftPressed,
-			object: this,
-			name: 'vertex'
-		});
-		//creating fabric shape for the tokens in the vertex
-		this.tokenShape = new fabric.Circle({
-			radius: Math.min(this.tokens, 2),
-			top: y,
-			left: x,
-			fill: tokenColor,			
-			selectable: false,
-			object: this,
-			name: 'token'
-		})
-	};
-	// draw the vertex
-	Vertex.prototype.draw = function() {			 
-			canvas.add(this.shape);					
-			this.drawTokens();
-        };		
-	// update the shape of tokens in the vertex
-	Vertex.prototype.drawTokens = function () {	
-			var radius = getTokenRadius(this.tokens);
-			this.tokenShape.radius = radius;
-			//centering the token shape inside a vertex is not as simple as one might think
-			this.tokenShape.top = this.y + offsetX - radius + this.shape.strokeWidth / 2;
-			this.tokenShape.left = this.x + offsetY - radius + this.shape.strokeWidth / 2;
-			this.tokenShape.width = radius * 2;
-			this.tokenShape.height = radius * 2;
-			canvas.remove(this.tokenShape);			
-			canvas.add(this.tokenShape);
-		}	
-	//change token's color and size (in case of scaling) 
-	Vertex.prototype.changeToken = function () {
-		this.tokenShape.fill = tokenColor;
-		this.tokenShape.radius = getTokenRadius(this.tokens);
-		this.drawTokens();
-	}
-			
-	Vertex.prototype.removeTokens = function () {		
-		graphTokens[this.id] = 0;
-		this.tokens = 0;		
-		updateGraphTokens();
-		
-		resetSimulation();
-	}
-	Vertex.prototype.deleteEdge = function (edge) {
-		
-		var k;
-		
-		//delete another vertex from neighbours
-		if (edge.from !== this) {
-			k = this.neighbours.indexOf(edge.from);
-		}
-		else k = this.neighbours.indexOf(edge.to);
-		if (k > -1) { 
-			this.neighbours.splice(k, 1);
-		}				
-		
-		//delete the edge
-		k = this.edges.indexOf(edge);
-		if (k > -1) { 
-			this.edges.splice(k, 1);
-		}	
-		
-		//decrease degree
-		this.degree--;
-		resetSimulation();
-		
-	}
-	Vertex.prototype.move = function() {
-		
-		// update vertex
-		this.x = this.shape.left + nodeRadius - offsetX;
-		this.y = this.shape.top + nodeRadius - offsetY;
-
-		// update token shape
-		this.tokenShape.set({'top': this.y + offsetX - this.tokenShape.radius + this.shape.strokeWidth / 2,
-							 'left': this.x + offsetY - this.tokenShape.radius + this.shape.strokeWidth / 2});
-		
-		
-		// update each connected edge
-		for (var i = 0; i < this.edges.length; i++) {
-			
-			if (this.edges[i].from === this) {
-				this.edges[i].shape.set({'x1': this.x + offsetX, 'y1': this.y + offsetY});
-				//this.edges[i].shape.y1 = this.y + offsetY;
-			} 
-			else {
-				this.edges[i].shape.set({'x2': this.x + offsetX, 'y2': this.y + offsetY});
-
-				
-			}			
-		}
-		graph.draw();
-		
-		if (converged) {
-			this.calcVConnections();
-			for (var i = 0; i < this.neighbours.length; i++) {
-				this.neighbours[i].calcVConnections();
-			}
-			drawCycles();
-
-		}
-		
-		canvas.renderAll();
-	}
-	Vertex.prototype.calcVConnections = function () {
-		for (var i = 0; i < this.edges.length; i++) {
-			calcConnectionPair(this, i, 0.25);
-			
-		}
-	}
-	
-	Vertex.prototype.pairFlows = function() {
-		
-		for (var inc = 0; inc < this.degree; inc++) {
-			for (var out = 0; out < this.degree; out++) {
-				for (var i = cycleStart; i < cycleLength + cycleStart - 1; i++){
-					if (this.outcoming[out][0] == '#') break;
-					if (this.outcoming[out][i+1] != this.incoming[inc][i]) {
-						//if mismatch, go to the next array
-						out++;
-						i = cycleStart-1;
-						
-					}
-					
-					//if the whole thing matches
-					else if (i === cycleStart + cycleLength - 2) {
-						//if (typeof this.mapInOut[inc] === 'undefined') {
-						this.mapInOut[inc] = out;	
-						this.outcoming[out][0] = '#'; //make sure we will not match it twice
-						out = this.degree;
-						
-						break;
-						//}					
-						
-					}
-				}
-			}			
-		}
-	}
-	Vertex.prototype.getEdgeN = function(edge) {
-		for (var i = 0; i < this.degree; i++) {
-			if (this.edges[i] ===  edge) return i;
-		}
-		return -1;
-	}
-	
-	Edge = function (id, from, to) {
-		if(typeof id != "number"){ return false };
-        if(typeof from != "object" || typeof to != "object"){ return false };
-        
-        this.id = id;
-        this.from = from;
-        this.to = to;      
-
-		//inform the connected vertices about the edge, and increment their degree. 
-		from.edges.push(this);
-		from.degree++;
-		to.edges.push(this);
-		to.degree++;		
-        from.neighbours.push(to);
-		to.neighbours.push(from);
-				
-		//create line object
-		this.shape = new fabric.Line(
-			[from.x + offsetX, from.y + offsetY,
-			to.x + offsetX, to.y + offsetY], {
-			stroke: 'black',
-			padding: 5,
-			strokeWidth: edgeWidth, 
-			//hasBorders: false,
-			lockRotation: true,
-			lockScalingX: true,
-			lockScalingY: true,
-			lockMovementX: true,
-			lockMovementY: true,
-			hasControls: false,
-			//selectable: false,
-			
-			object: this,
-			name: 'edge'		
-			}
-		);		
-	};
-		//add to canvas
-	Edge.prototype.draw = function() {
-			canvas.add(this.shape);
-        };
-	
-	
-	
-// animation -----------------------------------------------------------
-	
-	//animate tokens moving from one vertex to another
-	animateTokens = function (from, to, amount) {
-		
-		// don't animate movement at high speeds (anti-epilepsy feature)
-		if (tokenSpeed > 6) {
-			to.drawTokens();	   
-			from.drawTokens();
-			return;
-		}
-		
-		var radius = getTokenRadius(amount);
-		var token = new fabric.Circle ({						
-			radius: radius,
-			top: from.y + offsetY - radius + from.shape.strokeWidth / 2,
-			left: from.x + offsetX - radius + from.shape.strokeWidth / 2,
-			fill: tokenColor,			
-			selectable: false
-		});
-		canvas.remove(from.tokenShape); //delete the static shape before animating
-		canvas.add(token); 				//add new to be animated shape
-		
-		
-		token.animate({'left': to.x - radius + offsetX, 'top': to.y - radius + offsetY,}, {				
-				onComplete: function() {
-					canvas.remove(token);  //remove the moving shape after the animation is complete
-					to.drawTokens();	   //and draw what has come to the vertex  on this step
-					},
-				duration: 1000 / tokenSpeed
-			});
-		
-	}	
-	
-	//automatic update of canvas every browser-frame
-	animate = function () {
-		canvas.renderAll();
-		fabric.util.requestAnimFrame(animate);
-	}
-	
-	//calculate and save or load the radius
-	getTokenRadius = function (tokens) {
-		if (typeof tokenRadiuses[tokens] == 'undefined') {
-			tokenRadiuses[tokens] = Math.sqrt(tokens * tokenSize / Math.PI);
-		}
-		return tokenRadiuses[tokens];
-	}
-	
-// simulation of the algorithm -----------------------------------------
 	simulation = function () {	
-
+		
+		// calculate next state and fire the animations 
 		interval = setInterval(function() {
 	
 			fastTokenPropagation();
@@ -699,7 +67,6 @@ var VDA =(function($){
 				detectCycles();	
 				timeStamp++;				
 			}
-				
 			
 			//update things for the next step
 			for (var i = 0; i < graph.vertices.length; i++) {
@@ -733,14 +100,12 @@ var VDA =(function($){
 				});				
 			});
 			
-			
-			
 		}, 1200 / tokenSpeed);
 		
-		animate(); //updates canvas every frame
+		animate(); // updates canvas every frame
  	}
 	
-	//standard rotor-router
+	// standard rotor-router
 	normalTokenPropagation = function () {
 			
 		//make an algorithm step
@@ -757,12 +122,10 @@ var VDA =(function($){
 					totalVisits[v]++;
 				}
 			}			
-		}
-			
-			
+		}			
 	}
 	
-	//fast rotor-router
+	// fast rotor-router
 	fastTokenPropagation = function () {		
 		
 			//for each vertex
@@ -780,19 +143,686 @@ var VDA =(function($){
 			}
 			
 	}
+			
+		
+//----------------------------------------------------------------------------
+// detecting cycles 
+//----------------------------------------------------------------------------
+
+	// check if the simulation started repeating itself
+	detectCycles = function () {
+		var state = getStateString();
+		// save the string that describes the state to a hashmap, if it is not there yet
+		if (typeof statesToTime[state] === 'undefined') {
+			statesToTime[state] = timeStamp;
+		}
+		// if this state string has been saved already, this is a complete cycle
+		else {
+			//toggleEditingMode();
+			converged = true;
+			cycleStart = statesToTime[state];
+			cycleLength = timeStamp - statesToTime[state];
+			
+			mapInOut();
+			calcConnectionPoints();
+			
+			drawCycles();
+			
+			var str = 'Simulation converged after ' + 
+					  cycleStart + ' steps. <br/>' +
+					  'The length of the cycle: ' + cycleLength + ' steps. <br/>' +
+					  'Number of loops: ' + loops + '.';
+			$('#converged').html(str);
+			$('#converged').slideToggle();
+		}
+	}
+	// save how many tokens go through vertices at each step (for path identification)
+	rememberPath = function (from, to, tokens, timeStamp) {
+		
+		var toID = from.neighbours.indexOf(to); //get the id of the neighbors
+		var fromID = to.neighbours.indexOf(from);
+		
+		if (typeof from.outcoming[toID] === 'undefined') {
+			from.outcoming[toID] = [];
+		}
+		if (typeof to.incoming[fromID] === 'undefined') {
+			to.incoming[fromID] = [];
+		}
+		from.outcoming[toID][timeStamp] = tokens;
+		to.incoming[fromID][timeStamp] = tokens;
+	}
+	
+	getStateString = function () {
+		var state = "";
+		var v = graph.vertices.length;
+		
+		for (var i = 0; i < v; i++) {
+			state += graphTokens[i];
+			state += totalVisits[i] % graph.vertices[i].degree;
+		}
+		
+		return state;		
+	}
+	// find pairs of incoming+outcoming flows. 
+	mapInOut = function () {
+		graph.vertices.forEach(function(v) { v.pairFlows(); });
+	}
 	
 
-// page setups ---------------------------------------------------------
-	adjustCanvasSize = function() {
-		canvas.setDimensions({
-			width: $("#canvas-container").width(),
-			height: $("#canvas-container").height()
+//----------------------------------------------------------------------------
+// drawing
+//----------------------------------------------------------------------------
+		
+	// calculate appropriate token size
+	setTokenSize = function (amount) {
+		var k = amount;
+		var n = graph.vertices.length;
+		var m = graph.edges.length;
+		var maxDeg = graph.getMaxDegree();
+		
+		var maxTokens = k / (2 * m) + maxDeg;
+		
+		tokenSize = Math.PI * nodeRadius * nodeRadius / (maxTokens * 3);
+		if (tokenSize > tokenMinSize) tokenSize = tokenMinSize;
+		
+		setTokenColor(amount);
+		
+	}	
+	
+	// change color of tokens according to the scaling factor
+	setTokenColor = function (amount) {
+		
+		var percentFade = toLogScale(amount, 10, 1000000);
+		
+		var startColor = {
+			red: 255,
+			green: 0,
+			blue: 0
+		};
+		var endColor = {
+			red: 0, 
+			green: 10,
+			blue: 80
+		};
+		
+		var diffRed = endColor.red - startColor.red;
+		var diffGreen = endColor.green - startColor.green;
+		var diffBlue = endColor.blue - startColor.blue;
+
+		diffRed = (diffRed * percentFade) + startColor.red;
+		diffGreen = (diffGreen * percentFade) + startColor.green;
+		diffBlue = (diffBlue * percentFade) + startColor.blue;
+		
+		tokenColor = 'rgba(' + Math.ceil(diffRed) + ',' + Math.ceil(diffGreen) + ',' + Math.ceil(diffBlue) + ',1.0)';
+		
+		graph.vertices.forEach(function(v) { v.changeToken(); });
+	}
+	
+	// scale-size update if the number of tokens has been changed
+	updateGraphTokens = function () {
+		var total = 0;
+		for (var i = 0; i < graphTokens.length; i++) {
+			total += graphTokens[i];
+		}
+		
+		setTokenSize(total);
+		
+		//will be recalculated as needed
+		tokenRadiuses = [];
+	}
+	
+	// helper function - amount to percentage on logarithmic scale
+	toLogScale = function(a, min, max) {
+		if(max === min)
+			return 0;
+	
+		var b = Math.log(max),
+			c = (0 === min ? 0 : Math.log(min)),
+			d = (0 === a ? 0 : Math.log(a));
+			
+		return (d-c)/(b-c);
+	}
+
+	// calculate and save or load the radius
+	getTokenRadius = function (tokens) {
+		if (typeof tokenRadiuses[tokens] == 'undefined') {
+			tokenRadiuses[tokens] = Math.sqrt(tokens * tokenSize / Math.PI);
+		}
+		return tokenRadiuses[tokens];
+	}
+
+//----------------------------------------------------------------------------
+// drawing cycles
+//----------------------------------------------------------------------------	
+	
+	drawCycles = function () {
+		
+		drawnPoints = [];
+		loops = 0;
+		var segments = graph.edges.length * 4;
+					
+		for (var i = 0; i < graph.vertices.length; i++) {
+			var v = graph.vertices[i];
+				
+			//find a starting point for a cycle
+			var start = null;				
+			for (var j = 0; j < v.degree; j++){
+				//if the point is not yet used for drawing, take it as a start point
+				if (drawnPoints.indexOf(v.inConnections[j]) == -1) {
+					start = v.inConnections[j];
+					var next = {vertex: v, 
+							    edgeN: j};
+					break;
+				}
+			}
+				
+			//if found - draw the cycle, otherwise move to the next vertex
+			if (start != null) {	
+				do {
+					drawInnerConnection(next.vertex, next.edgeN);		
+					next = drawOuterConnection(next.vertex, next.vertex.mapInOut[next.edgeN]);
+					segments -= 2;
+					canvas.renderAll();
+				} while (next.vertex.inConnections[next.edgeN] != start);
+				loops++;
+			}			
+		}
+	}
+	
+	// draw a path segment inside a vertex
+	drawInnerConnection = function (vertex, conN) {
+		
+		var from = vertex.inConnections[conN];
+		var to = vertex.outConnections[vertex.mapInOut[conN]];
+		
+		drawnPoints.push(from);						
+						
+		var middle = {};
+		
+		middle.x = vertex.x - 1;
+		middle.y = vertex.y - 1;
+		
+		//middle.x = vertex.x + offsetX - 1;
+		//middle.y = vertex.y + offsetY - 1;
+				
+		drawConnection(from, to, middle);		
+	}
+	
+	// draw a path segment between vertices
+	drawOuterConnection = function (fromVertex, edgeN) {
+		var next = {};
+		var edge = fromVertex.edges[edgeN];
+		
+		//find the next vertex
+		if (edge.from === fromVertex) {
+			next.vertex = edge.to;
+		}
+		else {
+			next.vertex = edge.from;
+		}
+		
+		//get edge number in the next vertex array of edges
+		next.edgeN = next.vertex.getEdgeN(edge);
+		
+		//draw the line
+		drawConnection(fromVertex.outConnections[edgeN], 
+					   next.vertex.inConnections[next.edgeN],
+					   calcMiddle(fromVertex.outConnections[edgeN],next.vertex.inConnections[next.edgeN]));
+				
+		return next;
+	}
+	
+	//draw a path segment
+	drawConnection = function (from, to, middle) {
+		var line = new fabric.Path('M ' + from.x + ' ' + from.y + ' Q ' + middle.x + ', ' + middle.y + ', '+ to.x + ', ' + to.y, { fill: '', stroke: cycleColors[(loops + 1) % cycleColors.length] });
+		line.selectable = false;
+		canvas.add(line);
+	}
+	
+	// calculate coordiates of all connection points
+	calcConnectionPoints = function () {
+			var v = graph.vertices.length;
+			for (var i = 0; i < v; i++) {
+				graph.vertices[i].calcVConnections();				
+			}
+	}
+	
+	// calculate middle point for path curve between vertices
+	calcMiddle = function (from, to) {
+		var middle = {};
+		var x1, y1, x2, y2, alpha, r, t;
+		var p = {};
+		
+		//shortcuts
+		x1 = from.x;
+		y1 = from.y;
+		x2 = to.x;
+		y2 = to.y;
+		
+		//the middle of the line
+		p.x = Math.abs(x1 + x2)/2;
+		p.y = Math.abs(y1 + y2)/2;
+		
+		//calculate the line's slope angle
+		t = Math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1));				
+		alpha = Math.acos((x2 - x1)/t);
+		if (Math.asin((y2 - y1)/t) < 0) {
+				alpha *= -1;
+		}
+		
+		//curvature depends on the length of the line 
+		r = t * 0.1;
+		
+		//calculate coordinates (rotate 90 degree to the left)
+		middle.x = r * Math.cos(alpha - Math.PI / 2) + p.x;
+		middle.y = r * Math.sin(alpha - Math.PI / 2) + p.y;
+
+		return middle;
+	}
+		
+	
+//----------------------------------------------------------------------------
+// animating
+//----------------------------------------------------------------------------
+
+	// animate tokens moving from one vertex to another
+	animateTokens = function (from, to, amount) {
+		
+		// don't animate movement at high speeds (anti-epilepsy feature)
+		if (tokenSpeed > 6) {
+			to.drawTokens();	   
+			from.drawTokens();
+			return;
+		}
+		
+		var radius = getTokenRadius(amount);
+		var token = new fabric.Circle ({						
+			radius: radius,
+			top: from.y - radius + from.shape.strokeWidth / 2,
+			left: from.x - radius + from.shape.strokeWidth / 2,
+			//top: from.y + offsetY - radius + from.shape.strokeWidth / 2,
+			//left: from.x + offsetX - radius + from.shape.strokeWidth / 2,
+			fill: tokenColor,			
+			selectable: false
 		});
+		canvas.remove(from.tokenShape); //delete the static shape before animating
+		canvas.add(token); 				//add new to be animated shape
+		
+		
+		token.animate({'left': to.x - radius, 'top': to.y - radius,}, {			
+		//token.animate({'left': to.x - radius + offsetX, 'top': to.y - radius + offsetY,}, {		
+				onComplete: function() {
+					canvas.remove(token);  //remove the moving shape after the animation is complete
+					to.drawTokens();	   //and draw what has come to the vertex  on this step
+					},
+				duration: 1000 / tokenSpeed
+			});
+		
+	}	
+	
+	// automatic update of canvas every browser-frame
+	animate = function () {
+		canvas.renderAll();
+		fabric.util.requestAnimFrame(animate);
+	}
+	
+//----------------------------------------------------------------------------
+// Classes 
+//----------------------------------------------------------------------------
+
+	Graph = function (vertices, edges) {
+		if(typeof vertices == "undefined"){ vertices = [] };
+        if(typeof vertices != "object"){ return false };
+        if(typeof edges == "undefined"){ edges = [] };
+        if(typeof edges != "object"){ return false };
+        
+		this.vertices = vertices;
+        this.edges = edges;		
+		
 	};
+	Graph.prototype.draw = function(){			
+			canvas.clear();
+			this.edges.forEach(function(e) { e.draw(); });			
+			this.vertices.forEach(function(v) { v.draw(); });
+		};
+	// re-enumerate vertices starting from a given position
+    // 	so that IDs are continuous. 
+	Graph.prototype.reNumber = function(id) {		
+		var length = this.vertices.length;		
+		for (var i = id; id < length; id++) {
+			this.vertices[id].id = id;			
+		}	
+	}
+	Graph.prototype.addEdge = function(from, to) {
+		var edge = new Edge (this.edges.length, from, to);
+		this.edges.push(edge);
+		
+		resetSimulation();
+	}
+	// get the maximum vertex degree in the graph
+	Graph.prototype.getMaxDegree = function () {
+		var max = 0;
+		
+		for (var i = 0; i < graph.vertices.length; i++) {
+			if (graph.vertices[i].degree > max) {
+				max = graph.vertices[i].degree;
+			}
+		}		
+		return max;
+	}
 	
-	$(window).resize(adjustCanvasSize);
+	Vertex = function (id, x, y) {
+		if(typeof id != "number"){ return false };
+        if(typeof x != "number" || typeof y != "number"){ return false };
 	
-// Control events ------------------------------------------------------
+        this.id = id;        
+		this.x = x;
+        this.y = y; 
+		
+        this.degree = 0;
+        this.edges = [];
+		this.neighbours = [];
+		
+		this.tokens = 0;
+		this.visited = 0;
+		
+		this.incoming = [];
+		this.outcoming = [];
+		this.mapInOut = [];
+		this.inConnections = [];
+		this.outConnections = [];
+        
+		// fabric shape for the vertex
+		this.shape = new fabric.Circle({
+			radius: nodeRadius,
+			top: y - nodeRadius,// + offsetY,
+			left: x - nodeRadius,// + offsetX,
+			stroke: 'rgba(0,0,0,0.5)',
+			strokeWidth: 2,
+			fill: 'rgba(250,250,250,1.0)',			
+			hasControls: false,
+			hasBorders: false,	
+			selectable: shiftPressed,
+			object: this,
+			name: 'vertex'
+		});
+		// fabric shape for tokens in the vertex
+		this.tokenShape = new fabric.Circle({
+			radius: Math.min(this.tokens, 2),
+			top: y,
+			left: x,
+			fill: tokenColor,			
+			selectable: false,
+			object: this,
+			name: 'token'
+		})
+	};
+	// draw the vertex
+	Vertex.prototype.draw = function() {			 
+			canvas.add(this.shape);					
+			this.drawTokens();
+        };		
+	// update the shape of tokens in the vertex
+	Vertex.prototype.drawTokens = function () {	
+			var radius = getTokenRadius(this.tokens);
+			this.tokenShape.radius = radius;
+			//centering the token shape inside a vertex is not as simple as one might think
+			this.tokenShape.top = this.y - radius + this.shape.strokeWidth / 2;
+			this.tokenShape.left = this.x - radius + this.shape.strokeWidth / 2;
+			
+			//this.tokenShape.top = this.y + offsetX - radius + this.shape.strokeWidth / 2;
+			//this.tokenShape.left = this.x + offsetY - radius + this.shape.strokeWidth / 2;
+			
+			this.tokenShape.width = radius * 2;
+			this.tokenShape.height = radius * 2;
+			canvas.remove(this.tokenShape);			
+			canvas.add(this.tokenShape);
+		}	
+	// change token's color and size (in case of scaling) 
+	Vertex.prototype.changeToken = function () {
+		this.tokenShape.fill = tokenColor;
+		this.tokenShape.radius = getTokenRadius(this.tokens);
+		this.drawTokens();
+	}
+			
+	Vertex.prototype.removeTokens = function () {		
+		graphTokens[this.id] = 0;
+		this.tokens = 0;		
+		updateGraphTokens();
+		
+		resetSimulation();
+	}
+	// delete an edge, connected to the vertex
+	Vertex.prototype.deleteEdge = function (edge) {
+		
+		var k;
+		
+		//delete another vertex from neighbours
+		if (edge.from !== this) {
+			k = this.neighbours.indexOf(edge.from);
+		}
+		else k = this.neighbours.indexOf(edge.to);
+		if (k > -1) { 
+			this.neighbours.splice(k, 1);
+		}				
+		
+		//delete the edge
+		k = this.edges.indexOf(edge);
+		if (k > -1) { 
+			this.edges.splice(k, 1);
+		}	
+		
+		//decrease degree
+		this.degree--;
+		resetSimulation();
+		
+	}
+	// move the vertex and its edges, tokens and paths
+	Vertex.prototype.move = function() {		
+		// update vertex
+		this.x = this.shape.left + nodeRadius;
+		this.y = this.shape.top + nodeRadius;
+
+		// update token shape
+		this.tokenShape.set({'top': this.y - this.tokenShape.radius + this.shape.strokeWidth / 2,
+							 'left': this.x - this.tokenShape.radius + this.shape.strokeWidth / 2});
+		
+		// update each connected edge
+		for (var i = 0; i < this.edges.length; i++) {
+			
+			if (this.edges[i].from === this) {
+				this.edges[i].shape.set({'x1': this.x, 'y1': this.y});
+			} 
+			else {
+				this.edges[i].shape.set({'x2': this.x, 'y2': this.y});				
+			}			
+		}
+		graph.draw();
+		
+		if (converged) {
+			this.calcVConnections();
+			for (var i = 0; i < this.neighbours.length; i++) {
+				this.neighbours[i].calcVConnections();
+			}
+			drawCycles();
+		}		
+		canvas.renderAll();
+	}
+	// calculate coordinates of connection points for path drawing
+	Vertex.prototype.calcVConnections = function () {
+		for (var edgeN = 0; edgeN < this.edges.length; edgeN++) {
+			var theta = 0.25; // 0.25 - angle in rads, tells how far the points are from the corresponding edge. 	
+			
+			var x1, y1, x2, y2, alpha, r, t;
+			var p1 = {}, p2 = {};
+			
+			x1 = this.x;		
+			y1 = this.y;
+					
+			r = nodeRadius * 1.3;
+			x2 = this.neighbours[edgeN].x;
+			y2 = this.neighbours[edgeN].y;
+
+			t = Math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1));
+					
+			alpha = Math.acos((x2 - x1)/t);
+			if (Math.asin((y2 - y1)/t) < 0) {
+					alpha *= -1;
+			}			
+			
+			p1.x = r * Math.cos(alpha + theta) + x1;
+			p1.y = r * Math.sin(alpha + theta) + y1;
+				
+			p2.x = r * Math.cos(alpha - theta) + x1;
+			p2.y = r * Math.sin(alpha - theta) + y1;
+			
+			this.inConnections[edgeN] = p1;
+			this.outConnections[edgeN] = p2;			
+	
+		}
+	}
+	// for cycle detection (pairs incoming and outcoming token flows)
+	Vertex.prototype.pairFlows = function() {
+		
+		for (var inc = 0; inc < this.degree; inc++) {
+			for (var out = 0; out < this.degree; out++) {
+				for (var i = cycleStart; i < cycleLength + cycleStart - 1; i++){
+					if (this.outcoming[out][0] == '#') break;
+					if (this.outcoming[out][i+1] != this.incoming[inc][i]) {
+						//if mismatch, go to the next array
+						out++;
+						i = cycleStart-1;						
+					}
+					
+					//if the whole thing matches
+					else if (i === cycleStart + cycleLength - 2) {
+						this.mapInOut[inc] = out;	
+						this.outcoming[out][0] = '#'; //make sure we will not match it twice
+						out = this.degree;						
+						break;
+					}
+				}
+			}			
+		}
+	}
+	// get the edge's ordering number in the vertex
+	Vertex.prototype.getEdgeN = function(edge) {
+		for (var i = 0; i < this.degree; i++) {
+			if (this.edges[i] ===  edge) return i;
+		}
+		return -1;
+	}
+	
+	Edge = function (id, from, to) {
+		if(typeof id != "number"){ return false };
+        if(typeof from != "object" || typeof to != "object"){ return false };
+        
+        this.id = id;
+        this.from = from;
+        this.to = to;      
+
+		//inform the connected vertices about the edge, and increment their degree. 
+		from.edges.push(this);
+		from.degree++;
+		to.edges.push(this);
+		to.degree++;		
+        from.neighbours.push(to);
+		to.neighbours.push(from);
+				
+		//create line object
+		this.shape = new fabric.Line(
+			[from.x, from.y,
+			to.x, to.y], {
+			//[from.x + offsetX, from.y + offsetY,
+			//to.x + offsetX, to.y + offsetY], {
+			stroke: 'black',
+			padding: 5,
+			strokeWidth: edgeWidth, 
+			//hasBorders: false,
+			lockRotation: true,
+			lockScalingX: true,
+			lockScalingY: true,
+			lockMovementX: true,
+			lockMovementY: true,
+			hasControls: false,
+			//selectable: false,
+			
+			object: this,
+			name: 'edge'		
+			}
+		);		
+	};
+	// add to canvas
+	Edge.prototype.draw = function() {
+			canvas.add(this.shape);
+    };	
+
+//----------------------------------------------------------------------------
+// control events 
+//----------------------------------------------------------------------------
+	
+	// keyboard events
+	doKeyDown = function(e) {
+		
+		//16 - shift
+		if (e.keyCode == 16) {
+			toggleEditingMode();
+		}	
+	
+		//80 - P
+		else if (e.keyCode == 80) {
+			if (playing) {
+				pause();
+			}
+			else {
+				play();
+			}
+		}
+		
+		//84 - T
+		else if (e.keyCode == 84) {
+			placeTokens();
+		}
+		
+	}
+	
+	// go in or out editing mode
+	toggleEditingMode = function () {
+		
+		if (playing) {
+			pause();
+		}
+		shiftPressed = !shiftPressed;
+		canvas.forEachObject(function(o) {	
+			if (shiftPressed) {					
+					
+				if (o.name === 'vertex') {
+					o.selectable = true;	
+				}
+				if (o.name === 'token') {
+					o.visible = false;
+				}
+			}	
+			else {
+				if (o.name === 'vertex') {						
+					o.selectable = false;
+				}
+				if (o.name === 'token') {
+					o.visible = true;
+				}
+			}
+			
+		});		
+		//if exit editing mode on drawing
+		if (!shiftPressed && startVertex !== null) {
+			abortEdgeDrawing();
+		}
+		$("#info").slideToggle();
+		$("#token-info").slideToggle();
+		$("#sim-form").slideToggle();
+			
+		canvas.renderAll();
+	}
 	
 	// on window is not visible - pause the simulation
 	freeze = function () {
@@ -803,6 +833,7 @@ var VDA =(function($){
 	
 	// on play - start the simulation
 	play = function() {		
+		//if no tokens in the graph, do nothing
 		if (graphTokens.reduce(function(a, b) { return a + b; }, 0) === 0) return;
 	
 		$("#playBtn").addClass("disabled");
@@ -873,7 +904,7 @@ var VDA =(function($){
 		}			
 	}
 	
-	//remove all tokens
+	// remove all tokens
 	removeTokens = function () {
 		
 		initializeTokens();
@@ -896,8 +927,12 @@ var VDA =(function($){
 			}
 		}
 	);
-	
-	//left clicks
+
+//----------------------------------------------------------------------------
+// Graph editing 
+//----------------------------------------------------------------------------
+
+	// left clicks
 	leftClick = function (options) {
 		var target = options.target;
 		var name;
@@ -920,23 +955,9 @@ var VDA =(function($){
 				}
 			}			
 		}
-		
-		// token editing mode
-		else {
-			
-		}
-		
-		
-		
 	} 	
-	abortEdgeDrawing = function () {
-		startVertex = null;
-		canvas.remove(newEdge);
-		drawLine = false;	
-		canvas.renderAll();
-	}
 	
-	//right clicks
+	// right clicks
 	rightClick = function (options) {
 		var target = options.target;
 		var name;
@@ -973,7 +994,8 @@ var VDA =(function($){
 		
 		canvas.renderAll();
 	}	
-	//double clicks
+	
+	// double clicks
 	doubleClick = function (target, x, y) {
 		var name;
 		if (typeof target !== 'undefined') name = target.name;
@@ -1005,16 +1027,8 @@ var VDA =(function($){
 				addToken(target.object);
 			}
 		}
-		
-		
-	}
-	//mouse drag (pressed left button and move)
-	mouseDrag = function () {
-		
 	}
 	
-// interactions --------------------------------------------------------
-
 	// add token to a vertex
 	addToken = function (vertex) {
 		graphTokens[vertex.id]++;
@@ -1025,7 +1039,7 @@ var VDA =(function($){
 	}
 	
 	// change the amount of tokens (size) in a vertex
-	changeTokensManully = function (vertex, mouseX, mouseY) {				
+	changeTokensManually = function (vertex, mouseX, mouseY) {				
 		var pos = mouseX + mouseY;
 		var diff = pos - prevPos;
 		var changeSpeed = tokenSize / 4;
@@ -1077,7 +1091,8 @@ var VDA =(function($){
 	// add new vertex
 	addVertex = function (x, y) {		
 		var newId = graph.vertices.length;
-		var newVertex = new Vertex (newId, x - offsetX, y - offsetY);
+		var newVertex = new Vertex (newId, x, y);
+	//	var newVertex = new Vertex (newId, x - offsetX, y - offsetY);
 		graph.vertices.push(newVertex);
 		graphTokens[newId] = 0;
 		
@@ -1096,8 +1111,10 @@ var VDA =(function($){
 		startVertex = target.object;				
 			
 		newEdge = new fabric.Line(
-			[startVertex.x + offsetX, startVertex.y + offsetY,
-			startVertex.x + offsetX, startVertex.y + offsetY], {
+			[startVertex.x, startVertex.y,
+			startVertex.x, startVertex.y], {
+			//[startVertex.x + offsetX, startVertex.y + offsetY,
+			//startVertex.x + offsetX, startVertex.y + offsetY], {
 			stroke: 'black',
 			strokeWidth: edgeWidth, 
 			hasBorders: false,
@@ -1110,12 +1127,19 @@ var VDA =(function($){
 		newEdge.sendToBack();
 		canvas.renderAll();	
 
-		console.log('start edge');
 	}
 	
-	// end an edge (connect or abort)
-	endEdge = function (vertex) {
-		
+	// drawing an edge - move
+	updateNewEdge = function (x, y) {		
+		newEdge.set({ x2: x, y2: y });		
+		canvas.renderAll();		
+	}
+
+	abortEdgeDrawing = function () {
+		startVertex = null;
+		canvas.remove(newEdge);
+		drawLine = false;	
+		canvas.renderAll();
 	}
 	
 	// delete an edge
@@ -1138,8 +1162,124 @@ var VDA =(function($){
 		
 		displayJSON();
 	}
+
+//----------------------------------------------------------------------------
+// JSON 
+//----------------------------------------------------------------------------
+
+	// make a new graph from json string
+	importJSON = function (stringJSON) {
+		var importedGraph = JSON.parse(stringJSON);
+		
+		var v = importedGraph.vertices;
+		var e = importedGraph.edges;
+		
+		//clear the previous data
+		var vertices = [];
+		var edges = []; 
+		
+		//set nodeRadius
+		var size = Math.min ($("#canvas-container").width(), 
+							 $("#canvas-container").height());
+		nodeRadius = size * 0.2 / Math.sqrt(v.length);
+		
+		//create proper graph object
+		for (var i = 0; i < v.length; i++) {
+			vertices.push(new Vertex(v[i].id, v[i].x, v[i].y));
+		}
+		
+		for (var i = 0; i < e.length; i++) {
+			edges.push(new Edge(i, getVertexByID(e[i].from, vertices), getVertexByID(e[i].to, vertices)));
+		}
+		
+		
+		return new Graph(vertices, edges);
+		
+	}
 	
-// initialising --------------------------------------------------------
+	// load simulation state
+	importExtendedJSON = function (stringJSON) {
+		
+		//load stucture
+		graph = importJSON(stringJSON);
+		initializeTokens();
+		
+		//process additional simulation information
+		var extendedGraph = JSON.parse(stringJSON);
+		var v = extendedGraph.vertices;
+		
+		for (var i = 0; i < graph.vertices.length; i++) {
+			graph.vertices[i].tokens = v[i].tokens;			
+			graphTokens[i] = v[i].tokens;
+			totalVisits[i] = v[i].rotor;			
+		}
+		updateGraphTokens();
+		
+		displayJSON();
+	}
+	
+	// transform current graph into JSON and display it in the textarea on the page. 
+	displayJSON = function () {
+		var str = '{"vertices" : [\n';
+		for (var i = 0; i < graph.vertices.length; i++) {
+			if (i != 0) str += ',\n';
+			str += '{"id":' + graph.vertices[i].id + 
+				   ',"x":' + Math.round(graph.vertices[i].x) + 
+				   ',"y":' + Math.round(graph.vertices[i].y) + 
+					'}';
+		}
+		str += '], \n"edges" : [\n';
+		for (var i = 0; i < graph.edges.length; i++) {
+			if (i != 0) str += ',\n';
+			str += '{"id":' + graph.edges[i].id + 
+				   ',"from":' + graph.edges[i].from.id + 
+				   ',"to":' + graph.edges[i].to.id + 
+					'}';
+		}
+		str += ']}';
+	//	str += '], \n"x" : ' + offsetX + ', "y" : ' + offsetY + '}';
+		$("#JSONinput").val(str);
+		
+		displayExtendedJSON();
+	}
+	
+	// output current simulation in JSON
+	displayExtendedJSON = function () {
+		var str = '{"vertices" : [\n';
+		for (var i = 0; i < graph.vertices.length; i++) {
+			if (i != 0) str += ',\n';
+			str += '{"id":' + graph.vertices[i].id + 
+				   ',"x":' + Math.round(graph.vertices[i].x) + 
+				   ',"y":' + Math.round(graph.vertices[i].y) + 
+				   ',"tokens":' + graphTokens[i] + 
+				   ',"rotor":' + (totalVisits[i] % graph.vertices[i].degree)+ 
+					'}';
+		}
+		str += '], \n"edges" : [\n';
+		for (var i = 0; i < graph.edges.length; i++) {
+			if (i != 0) str += ',\n';
+			str += '{"id":' + graph.edges[i].id + 
+				   ',"from":' + graph.edges[i].from.id + 
+				   ',"to":' + graph.edges[i].to.id + 
+					'}';
+		}
+		str += ']}';
+		$("#JSONext").val("");
+		$("#JSONext").val(str);
+	}
+	
+	// helper function
+	getVertexByID = function (id, vertices) {
+		for (var i = 0; i < vertices.length; i++) {
+			if (vertices[i].id == id) return vertices[i];
+		}
+	}	
+	
+//----------------------------------------------------------------------------
+// Initializing 
+//----------------------------------------------------------------------------
+
+	// initialize moveTokens array (used for animation)
 	initMovetokens = function () {
 		moveTokens = [];
 		var v = graph.vertices.length;
@@ -1154,155 +1294,22 @@ var VDA =(function($){
 			}
 		}	
 	}
-
-	$(document).ready(function() {
-
-		
-		
-		
-		//controls
-		$("#playBtn").click(play);
-		$("#pauseBtn").click(pause);
-		$("#createBtn").click(create);
-		$("#loadBtn").click(load);
-		$("#tokenBtn").click(placeTokens);
-		$("#removeBtn").click(removeTokens);
-		$("#tokenSlider").slider({
-				min: 10,
-				max: 1000000,
-				scale: 'logarithmic',
-				step: 5,
-				value: 100
-			});			
-		$("#speedSlider").slider({
-			value: 3,
-			formater: function(value) {
-				return 'Speed: ' + value;
-			}
-		}).on('change', changeSpeed)
-		  .on('slideStop', restartSimulation);
-		$("#create3x3").click(3, createExample);
-		$("#create4x4").click(4, createExample);
-		$("#create5x5").click(5, createExample);
-		$("#create6x6").click(6, createExample);
-		$("#create8x8").click(8, createExample);
-		$("#create10x10").click(10, createExample);
-		
-		//initialize canvas as a fabric object
-		canvas = new fabric.CanvasEx('canvas', {
-			selection: false, 
-			renderOnAddRemove: false, //increases performance 
-			moveCursor: 'default', 
-			hoverCursor: 'default'
-		});  
-		
-		// remove standard browser right-click context menu from the canvas
-		$('body').on('contextmenu', 'canvas', function(e){ return false; });
-
-		// add mouse events
-		canvas.on({
-			'mouse:dblclick': function (options) {
-				var p = canvas.getPointer(event.e);
-				doubleClick(options.target, p.x, p.y);
-				console.log('mouse:dblclick');
-			},
-			
-			'mouse:down': function (options) { 		
-				mousePressed = true;
-				clickedTarget = options;
-				if (options.e.which === 3) {
-					
-				}
-				else {
-					if (typeof options.target !== 'undefined') {
-						if (options.target.name === 'token') {
-							var p = canvas.getPointer(event.e);
-							prevPos = p.x + p.y;
-							selectedVertex = options.target.object;
-						}	
-					}
-				}		
-				
-			},
-			'mouse:up': function (options) { 	
-				mousePressed = false;
-				selectedVertex = null;
-				if (options.e.which === 3) {
-					rightClick (clickedTarget);
-				}
-				else {
-					leftClick (clickedTarget);
-				}				
-										
-			},
-			'mouse:move': function (options) { 	
-				
-				if (options.e.which === 3) {
-					if (mousePressed) {
-						//console.log('mouse drag R');
-					}
-				}
-				else {
-					if (mousePressed) {
-						//console.log('mouse drag L');
-						if (selectedVertex !== null && !shiftPressed) {
-							var pointer = canvas.getPointer(event.e);
-							var posX = pointer.x;
-							var posY = pointer.y;							
-							changeTokensManully(selectedVertex, posX, posY);
-						}						
-					}	
-					// mouse not pressed
-					else {
-						// drawing a newly started edge
-						if (shiftPressed && startVertex !== null) {
-							var pointer = canvas.getPointer(event.e);
-							var posX = pointer.x;
-							var posY = pointer.y;					
-							updateNewEdge(posX,posY);
-						}
-					}
-				}	
-				
-			},
-			
-			'object:moving': function (e) {  // vertex moves			
-				// move edges when vertex moves and update vertex state
-				e.target.object.move();
-				displayJSON();
-			}
-		});
-		
-		//add keyboard events
-		window.addEventListener( "keydown", doKeyDown, true);
-		
-			
-		adjustCanvasSize();
-                        
-        // make example graph
-        graph = makeExample();
-		initializeTokens();
-		
-		
-		//load example graph
-		//graph = importJSON(getJSON('diamond.json'));
-		
-		graph.draw();
-				
-
-        canvas.renderAll();
-		displayJSON();
-		
-	});
 	
-	
-	
-	
-	updateNewEdge = function (x, y) {		
-		newEdge.set({ x2: x, y2: y });		
-		canvas.renderAll();		
+	// initialize token array and parameters 
+	initializeTokens = function () {			
+		
+		var v = graph.vertices.length;
+		
+		// for each vertex
+		for (var i = 0; i < v; i++) {	
+			graph.vertices[i].tokens = 0;
+			graphTokens[i] = 0;	
+		}
+		
+		resetSimulation();
 	}
-	//reset the auxilary variables
+	
+	// reset the auxilary variables 
 	resetSimulation = function () {
 		newTokens = [];
 		totalVisits = [];
@@ -1329,21 +1336,8 @@ var VDA =(function($){
 		graph.draw();
 		canvas.renderAll();
 	}
-		
-	// initialize token array and parameters 
-	initializeTokens = function () {			
-		
-		var v = graph.vertices.length;
-		
-		// for each vertex
-		for (var i = 0; i < v; i++) {	
-			graph.vertices[i].tokens = 0;
-			graphTokens[i] = 0;	
-		}
-		
-		resetSimulation();
-	}
-	//place tokens randomly
+	
+	// place tokens randomly
 	randomTokens = function (amount) {
 		setTokenSize(amount);
 		
@@ -1363,8 +1357,8 @@ var VDA =(function($){
 			graph.vertices[i].drawTokens();
 		}
 	}
-	
-// Graph example -------------------------------------------------------	
+		
+	// create, initialize and draw example graph
 	createExample = function (param) {
 		graph = makeExample(param.data);
 		initializeTokens();
@@ -1374,23 +1368,24 @@ var VDA =(function($){
 		displayJSON();
 	}
 	
+	// make a new graph object of size n
     makeExample = function (n) {
         if (typeof n === 'undefined') n = 5;
 		else if (typeof n === 'object') n = n.data;
 		var size = Math.min ($("#canvas-container").width(), 
 							 $("#canvas-container").height());
 		
-		offsetX = offsetY = size * 0.5 / n;
+		var offset = size * 0.5 / n;
 		
 		var vertices = [];
 		var edges = [];
 		var eID = 0;
 		nodeRadius = size * 0.2 / n;
-		var distance = (size - offsetX * 2) / (n - 1);
+		var distance = (size - offset * 2) / (n - 1);
 
 		for (var i = 0; i < n; i++) {
 			for (var j = 0; j < n; j++) {
-				vertices.push(new Vertex(n*i+j, distance*i, distance*j));
+				vertices.push(new Vertex(n*i+j, distance*i + offset, distance*j + offset));
 				if (j > 0) {
 					edges.push(new Edge(eID++, vertices[n*i + j-1], vertices[n*i + j]));
 				}
@@ -1402,193 +1397,139 @@ var VDA =(function($){
 					
         return new Graph(vertices, edges);
     };
-// JSON import ----------------------------------------------------------
-	
-	//make a new graph from json string
-	importJSON = function (stringJSON) {
-		var importedGraph = JSON.parse(stringJSON);
-		
-		offsetX = importedGraph.x;
-		offsetY = importedGraph.y;
-		
-		var v = importedGraph.vertices;
-		var e = importedGraph.edges;
-		
-		//clear the previous data
-		var vertices = [];
-		var edges = []; 
-		
-		for (var i = 0; i < v.length; i++) {
-			vertices.push(new Vertex(v[i].id, v[i].x, v[i].y));
-		}
-		
-		for (var i = 0; i < e.length; i++) {
-			edges.push(new Edge(i, getVertexByID(e[i].from, vertices), getVertexByID(e[i].to, vertices)));
-		}
-		
-		
-		return new Graph(vertices, edges);
-		
-	}
-	
-	//load simulation state
-	importExtendedJSON = function (stringJSON) {
-		
-		//load stucture
-		graph = importJSON(stringJSON);
-		initializeTokens();
-		
-		//process additional simulation information
-		var extendedGraph = JSON.parse(stringJSON);
-		var v = extendedGraph.vertices;
-		
-		for (var i = 0; i < graph.vertices.length; i++) {
-			graph.vertices[i].tokens = v[i].tokens;			
-			graphTokens[i] = v[i].tokens;
-			totalVisits[i] = v[i].rotor;			
-		}
-		updateGraphTokens();
-		
-		displayJSON();
-	}
 
-	//transform current graph into JSON and display it in the textarea on the page. 
-	displayJSON = function () {
-		var str = '{"vertices" : [\n';
-		for (var i = 0; i < graph.vertices.length; i++) {
-			if (i != 0) str += ',\n';
-			str += '{"id":' + graph.vertices[i].id + 
-				   ',"x":' + Math.round(graph.vertices[i].x) + 
-				   ',"y":' + Math.round(graph.vertices[i].y) + 
-					'}';
-		}
-		str += '], \n"edges" : [\n';
-		for (var i = 0; i < graph.edges.length; i++) {
-			if (i != 0) str += ',\n';
-			str += '{"id":' + graph.edges[i].id + 
-				   ',"from":' + graph.edges[i].from.id + 
-				   ',"to":' + graph.edges[i].to.id + 
-					'}';
-		}
-		str += '], \n"x" : ' + offsetX + ', "y" : ' + offsetY + '}';
-		$("#JSONinput").val(str);
+	adjustCanvasSize = function() {
+		canvas.setDimensions({
+			width: $("#canvas-container").width(),
+			height: $("#canvas-container").height()
+		});
+	};
+	
+	$(window).resize(adjustCanvasSize);	
+	
+	
+	$(document).ready(function() {
 		
-		displayExtendedJSON();
-	}
-	
-	// helper function
-	getVertexByID = function (id, vertices) {
-		for (var i = 0; i < vertices.length; i++) {
-			if (vertices[i].id == id) return vertices[i];
-		}
-	}	
-	
-	//output current simulation in JSON
-	displayExtendedJSON = function () {
-		var str = '{"vertices" : [\n';
-		for (var i = 0; i < graph.vertices.length; i++) {
-			if (i != 0) str += ',\n';
-			str += '{"id":' + graph.vertices[i].id + 
-				   ',"x":' + Math.round(graph.vertices[i].x) + 
-				   ',"y":' + Math.round(graph.vertices[i].y) + 
-				   ',"tokens":' + graphTokens[i] + 
-				   ',"rotor":' + (totalVisits[i] % graph.vertices[i].degree)+ 
-					'}';
-		}
-		str += '], \n"edges" : [\n';
-		for (var i = 0; i < graph.edges.length; i++) {
-			if (i != 0) str += ',\n';
-			str += '{"id":' + graph.edges[i].id + 
-				   ',"from":' + graph.edges[i].from.id + 
-				   ',"to":' + graph.edges[i].to.id + 
-					'}';
-		}
-		str += '], \n"x" : ' + offsetX + ', "y" : ' + offsetY + '}';
-		$("#JSONext").val("");
-		$("#JSONext").val(str);
-	}
-	
-	
-	//this is supposed to be a function loading JSON from a file. Not tested, not used. 
-	getJSON = function (filename) {
-		return '{"vertices": [	{"id":0,"x":100,"y":150},	{"id":1,"x":200,"y":100},	{"id":2,"x":200,"y":200},	{"id":3,"x":300,"y":150}	],"edges":[	{"from":0,"to":1},	{"from":1,"to":3},	{"from":0,"to":2},	{"from":2,"to":3},	{"from":1,"to":2}	],"x":0,"y":0}';
+		//controls
+		$("#playBtn").click(play);
+		$("#pauseBtn").click(pause);
+		$("#createBtn").click(create);
+		$("#loadBtn").click(load);
+		$("#tokenBtn").click(placeTokens);
+		$("#removeBtn").click(removeTokens);
+		$("#tokenSlider").slider({
+				min: 10,
+				max: 1000000,
+				scale: 'logarithmic',
+				step: 5,
+				value: 100
+			});			
+		$("#speedSlider").slider({
+			value: 2,
+			formater: function(value) {
+				return 'Speed: ' + value;
+			}
+		}).on('change', changeSpeed)
+		  .on('slideStop', restartSimulation);
+		$("#create3x3").click(3, createExample);
+		$("#create4x4").click(4, createExample);
+		$("#create5x5").click(5, createExample);
+		$("#create6x6").click(6, createExample);
+		$("#create8x8").click(8, createExample);
+		$("#create10x10").click(10, createExample);
+		
+		//initialize canvas as a fabric object
+		canvas = new fabric.CanvasEx('canvas', {
+			selection: false, 
+			renderOnAddRemove: false, //increases performance 
+			moveCursor: 'default', 
+			hoverCursor: 'default'
+		});  
+		
+		// remove standard browser right-click context menu from the canvas
+		$('body').on('contextmenu', 'canvas', function(e){ return false; });
 
-		
-		/* - doesn't work on the local machine
-		var contents;
-		$.ajax({ url : '/' + filename, 
-				 type: 'GET', 
-				 dataType :'json', 
-				 async : false, 
-				 cache : true, 
-				 success : function(myJSON){contents = myJSON;}
+		// add mouse events
+		canvas.on({
+			'mouse:dblclick': function (options) {
+				var p = canvas.getPointer(options.e);
+				doubleClick(options.target, p.x, p.y);
+			},
+			
+			'mouse:down': function (options) { 		
+				mousePressed = true;
+				clickedTarget = options;
+				if (options.e.which === 3) {
+					
+				}
+				else {
+					if (typeof options.target !== 'undefined') {
+						if (options.target.name === 'token') {
+							var p = canvas.getPointer(options.e);
+							prevPos = p.x + p.y;
+							selectedVertex = options.target.object;
+						}	
+					}
+				}		
+				
+			},
+			'mouse:up': function (options) { 	
+				mousePressed = false;
+				selectedVertex = null;
+				if (options.e.which === 3) {
+					rightClick (clickedTarget);
+				}
+				else {
+					leftClick (clickedTarget);
+				}				
+										
+			},
+			'mouse:move': function (options) { 	
+				
+					if (mousePressed) {						
+						if (selectedVertex !== null && !shiftPressed) {
+							var pointer = canvas.getPointer(options.e);
+							var posX = pointer.x;
+							var posY = pointer.y;							
+							changeTokensManually(selectedVertex, posX, posY);
+						}						
+					}	
+					// mouse not pressed
+					else {
+						// drawing a newly started edge
+						if (shiftPressed && startVertex !== null) {
+							var pointer = canvas.getPointer(options.e);
+							var posX = pointer.x;
+							var posY = pointer.y;					
+							updateNewEdge(posX,posY);
+						}
+					}
+									
+			},
+			
+			'object:moving': function (e) {  // vertex moves			
+				// move edges when vertex moves and update vertex state
+				e.target.object.move();
+				displayJSON();
+			}
 		});
 		
-		return contents;
-		*/
-	}
-	
-	doKeyDown = function(e) {
-		
-		//16 - shift
-		console.log(e.keyCode);
-		if (e.keyCode == 16) {
-			toggleEditingMode();
-		}	
-	
-		//80 - P
-		else if (e.keyCode == 80) {
-			if (playing) {
-				pause();
-			}
-			else {
-				play();
-			}
-		}
-		
-		//84 - T
-		else if (e.keyCode == 84) {
-			placeTokens();
-		}
-		
-	}
-	
-	toggleEditingMode = function () {
-		
-		if (playing) {
-			pause();
-		}
-		shiftPressed = !shiftPressed;
-		canvas.forEachObject(function(o) {	
-			if (shiftPressed) {					
-					
-				if (o.name === 'vertex') {
-					o.selectable = true;	
-				}
-				if (o.name === 'token') {
-					o.visible = false;
-				}
-			}	
-			else {
-				if (o.name === 'vertex') {						
-					o.selectable = false;
-				}
-				if (o.name === 'token') {
-					o.visible = true;
-				}
-			}
+		//add keyboard events
+		window.addEventListener( "keydown", doKeyDown, true);		
 			
-		});		
-		//if exit editing mode on drawing
-		if (!shiftPressed && startVertex !== null) {
-			abortEdgeDrawing();
-		}
-		$("#info").slideToggle();
-		$("#token-info").slideToggle();
-		$("#sim-form").slideToggle();
-			
-		canvas.renderAll();
-	}
-	
+		adjustCanvasSize();
+                        
+        // make example graph
+        graph = makeExample();
+		initializeTokens();
+		
+		graph.draw();
+        canvas.renderAll();
+		
+		displayJSON();
+		
+	});
+
+
 	
 })(jQuery)
