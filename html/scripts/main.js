@@ -168,10 +168,10 @@ var VDA =(function($){
 			
 			drawCycles();
 			
-			var str = 'Simulation converged after ' + 
-					  cycleStart + ' steps. <br/>' +
-					  'The length of the cycle: ' + cycleLength + ' steps. <br/>' +
-					  'Number of loops: ' + loops + '.';
+			var str = 'Simulation stabilized after ' + 
+					  cycleStart + (cycleStart == 1 ? ' step' : ' steps') + '.<br/>' +
+					  'The length of the period: ' + cycleLength + ' steps. <br/>' +
+					  'Number of cycles: ' + loops + '.';
 			$('#converged').html(str);
 			$('#converged').slideToggle();
 		}
@@ -300,32 +300,34 @@ var VDA =(function($){
 		drawnPoints = [];
 		loops = 0;
 		var segments = graph.edges.length * 4;
+				
+		while (segments > 0) {
+			for (var i = 0; i < graph.vertices.length; i++) {
+				var v = graph.vertices[i];
 					
-		for (var i = 0; i < graph.vertices.length; i++) {
-			var v = graph.vertices[i];
-				
-			//find a starting point for a cycle
-			var start = null;				
-			for (var j = 0; j < v.degree; j++){
-				//if the point is not yet used for drawing, take it as a start point
-				if (drawnPoints.indexOf(v.inConnections[j]) == -1) {
-					start = v.inConnections[j];
-					var next = {vertex: v, 
-							    edgeN: j};
-					break;
+				//find a starting point for a cycle
+				var start = null;				
+				for (var j = 0; j < v.degree; j++){
+					//if the point is not yet used for drawing, take it as a start point
+					if (drawnPoints.indexOf(v.inConnections[j]) == -1) {
+						start = v.inConnections[j];
+						var next = {vertex: v, 
+									edgeN: j};
+						break;
+					}
 				}
+					
+				//if found - draw the cycle, otherwise move to the next vertex
+				if (start != null) {	
+					do {
+						drawInnerConnection(next.vertex, next.edgeN);		
+						next = drawOuterConnection(next.vertex, next.vertex.mapInOut[next.edgeN]);
+						segments -= 2;
+						canvas.renderAll();
+					} while (next.vertex.inConnections[next.edgeN] != start);
+					loops++;
+				}			
 			}
-				
-			//if found - draw the cycle, otherwise move to the next vertex
-			if (start != null) {	
-				do {
-					drawInnerConnection(next.vertex, next.edgeN);		
-					next = drawOuterConnection(next.vertex, next.vertex.mapInOut[next.edgeN]);
-					segments -= 2;
-					canvas.renderAll();
-				} while (next.vertex.inConnections[next.edgeN] != start);
-				loops++;
-			}			
 		}
 	}
 	
@@ -738,15 +740,15 @@ var VDA =(function($){
 			stroke: 'black',
 			padding: 5,
 			strokeWidth: edgeWidth, 
-			//hasBorders: false,
+			hasBorders: false,
 			lockRotation: true,
 			lockScalingX: true,
 			lockScalingY: true,
 			lockMovementX: true,
 			lockMovementY: true,
 			hasControls: false,
-			//selectable: false,
-			
+			selectable: false,
+			perPixelTargetFind: true,
 			object: this,
 			name: 'edge'		
 			}
@@ -1422,7 +1424,7 @@ var VDA =(function($){
 				max: 1000000,
 				scale: 'logarithmic',
 				step: 5,
-				value: 100
+				value: 10
 			});			
 		$("#speedSlider").slider({
 			value: 2,
