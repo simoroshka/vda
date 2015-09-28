@@ -714,6 +714,57 @@ var VDA =(function($){
 		}
 		return -1;
 	}
+	Vertex.prototype.randomizePorts = function () {
+		
+		var i = this.edges.length;
+		var t1, t2, r;
+
+		// While there remain elements to shuffle...
+		while (0 !== i) {
+
+		// Pick a remaining element...
+			r = Math.floor(Math.random() * i);
+			i--;
+
+			// And swap it with the current element.
+			t1 = this.edges[i];
+			t2 = this.neighbours[i];
+			this.edges[i] = this.edges[r];
+			this.neighbours[i] = this.neighbours[r];
+			this.edges[r] = t1;
+			this.neighbours[r] = t2;
+		}
+		
+	}
+	Vertex.prototype.orderPorts = function () {
+		var sortedEdges = [];
+		var sortedNeighbours = [];
+		var ids = [];
+	
+		for (var i = 0; i < this.edges.length; i++) {
+			ids[i] = this.neighbours[i].id;
+		}
+		ids.sort(function(a, b){return a-b});
+		
+		for (var i = 0; i < this.edges.length; i++) {
+			for (var j = 0; j < this.edges.length; j++) {
+				if (this.neighbours[j].id == ids[i]) {
+					sortedEdges[i] = this.edges[j];
+					sortedNeighbours[i] = this.neighbours[j];
+					break;
+				}
+			}
+		}
+				
+		this.edges = sortedEdges;
+		this.neighbours = sortedNeighbours;
+	}
+	
+	//helper function for array shuffling
+	shuffle = function(o){
+		for(var j, x, i = o.length; i; j = Math.floor(Math.random() * i), x = o[--i], o[i] = o[j], o[j] = x);
+		return o;
+	}
 	
 	Edge = function (id, from, to) {
 		if(typeof id != "number"){ return false };
@@ -762,6 +813,24 @@ var VDA =(function($){
 //----------------------------------------------------------------------------
 // control events 
 //----------------------------------------------------------------------------
+	
+	// on randomize ports button click
+	randomizePorts = function () {	
+
+			
+		for (var i = 0; i < graph.vertices.length; i++) {			
+			graph.vertices[i].randomizePorts();			
+		}
+		
+		
+	}
+	
+	// on order ports button click
+	orderPorts = function () {
+		for (var i = 0; i < graph.vertices.length; i++) {
+			graph.vertices[i].orderPorts();
+		}
+	}
 	
 	// keyboard events
 	doKeyDown = function(e) {
@@ -1439,6 +1508,8 @@ var VDA =(function($){
 		$("#create6x6").click(6, createExample);
 		$("#create8x8").click(8, createExample);
 		$("#create10x10").click(10, createExample);
+		$("#randomizePorts").click(randomizePorts);
+		$("#orderPorts").click(orderPorts);
 		
 		//initialize canvas as a fabric object
 		canvas = new fabric.CanvasEx('canvas', {
