@@ -7,7 +7,7 @@ window.onpageshow=window.onpagehide=window.onfocus=window.onblur=$.winFocus.meth
 pagehide:!0};if(a=a||window.event)a.hidden=a.type in b?b[a.type]:document[$.winFocus.props.hidden],$(window).data("visible",!a.hidden),$.winFocus.methods.exeCB(a);else try{$.winFocus.methods.onChange.call(document,new Event("visibilitychange"))}catch(c){}}},$.winFocus.props={hidden:"hidden"})})(jQuery);
 /*    End Plugin      */
 
-var VDA =(function($){
+//var VDA =(function($){
 	
 	var canvas = null,
 		context = null,
@@ -1605,4 +1605,3 @@ var VDA =(function($){
 
 
 	
-})(jQuery)

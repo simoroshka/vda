@@ -4,7 +4,7 @@
 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rotor-router simulation</title>
+  <title>Single token simulation</title>
   
   <link rel="stylesheet" href="styles/bootstrap.min.css">
   <link rel="stylesheet" href="styles/style.css">
@@ -16,7 +16,8 @@
   <script src="scripts/fabric.canvasex.js"></script>
   
   <script src="scripts/graph.js"></script>  
-  <script src="scripts/rotorrouter.js"></script>  
+  <script src="scripts/singleToken.js"></script>  
+  
   <script src="scripts/bootstrap-slider.js"></script>
 
 </head>
@@ -40,7 +41,6 @@
 
 			<div class="tab-content">
 				<div id="home" class="tab-pane fade in active">
-					<div id="converged" class="alert alert-success"></div>
 					<div id="sim-form">
 						<div class="form-group"> 
 							<button class="btn btn-default" id="create3x3">3x3</button>
@@ -54,20 +54,13 @@
 							<button class="btn btn-default" id="randomizePorts">Randomize Ports</button>
 							<button class="btn btn-default" id="orderPorts">Order Ports</button>							
 						</div>
-						<div class="form-group">
-							<button class="btn btn-default" id="tokenBtn">Place tokens</button>
-							<input type="text" class="span2" id="tokenSlider"/>
-							
-						</div>
-						<div class="form-group">						
-							<button class="btn btn-default" id="removeBtn">Remove tokens</button>
-						</div>
+						
+						
 						<div class="form-group">
 							<button class="btn btn-default" id="playBtn">Play</button>
 							<button class="btn btn-default disabled" id="pauseBtn">Pause</button>
 							<input type="text" class="span2" value="10" data-slider-min="1" data-slider-max="20" data-slider-step="1" id="speedSlider"/>
 						</div>				
-						<div class="alert alert-info">Press Shift to edit the graph</div>
 						
 					</div>
 					<div id="info" class="alert alert-info">
@@ -82,12 +75,9 @@
 						<small>Press Shift to return</small>
 					</div>
 					<div id="token-info" class="alert alert-info">
-						<h4>Token editing</h4>
-						<ul>
-							<li>Double click on a vertex to add a token.</li>
-							<li>Drag a token group to change its size.</li>
-							<li>Right click to delete a token group.</li>
-						</ul>
+						<p>Double click on a vertex to place the agent.</p>
+						</br>
+						<small>Press Shift to edit the graph</small>
 					</div>
 
 			    </div>
@@ -105,9 +95,9 @@
 				<div id="menu2" class="tab-pane fade">
 				
 					<div class="alert alert-info">
-						<h4>A simulation of the rotor-router algorithm for the token distribution in a network. </h4>
-						<p>By Anna Kruglaia. Aalto University, Department of Computer Science.</p>
-						<p><a href="https://github.com/simoroshka/vda">GitHub</a></p>
+						<h4></h4>
+						<p></p>
+						
 					</div>
 					
 			    </div>		 
