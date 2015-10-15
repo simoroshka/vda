@@ -469,12 +469,14 @@ var nodeRadius = 15,	//default, changes according to the grid size
 	}
 	
 	// draw a path segment inside a vertex
-	function drawInnerConnection(vertex, conN) {
+	function drawInnerConnection(vertex, inConN, outConN) {
+		if (typeof outConN === 'undefined') {
+			outConN = vertex.mapInOut[inConN];
+		}
+		var from = vertex.inConnections[inConN];
+		var to = vertex.outConnections[outConN];
 		
-		var from = vertex.inConnections[conN];
-		var to = vertex.outConnections[vertex.mapInOut[conN]];
-		
-		drawnPoints.push(from);						
+		if (typeof drawnPoints !== 'undefined') drawnPoints.push(from);						
 						
 		var middle = {};
 		
@@ -485,7 +487,7 @@ var nodeRadius = 15,	//default, changes according to the grid size
 	}
 	
 	// draw a path segment between vertices
-	function drawOuterConnection(fromVertex, edgeN) {
+	function drawOuterConnection(fromVertex, edgeN, curvature) {
 		var next = {};
 		var edge = fromVertex.edges[edgeN];		
 		
@@ -503,7 +505,7 @@ var nodeRadius = 15,	//default, changes according to the grid size
 		//draw the line
 		drawConnection(fromVertex.outConnections[edgeN], 
 					   next.vertex.inConnections[next.edgeN],
-					   calcMiddle(fromVertex.outConnections[edgeN],next.vertex.inConnections[next.edgeN]));
+					   calcMiddle(fromVertex.outConnections[edgeN],next.vertex.inConnections[next.edgeN],curvature));
 				
 		return next;
 	}
@@ -524,7 +526,9 @@ var nodeRadius = 15,	//default, changes according to the grid size
 	}
 	
 	// calculate middle point for path curve between vertices
-	function calcMiddle(from, to) {
+	function calcMiddle(from, to, curvature) {
+		if (typeof curvature === 'undefined') curvature = 0.1;
+		
 		var middle = {};
 		var x1, y1, x2, y2, alpha, r, t;
 		var p = {};
@@ -547,7 +551,7 @@ var nodeRadius = 15,	//default, changes according to the grid size
 		}
 		
 		//curvature depends on the length of the line 
-		r = t * 0.1;
+		r = t * curvature;
 		
 		//calculate coordinates (rotate 90 degree to the left)
 		middle.x = r * Math.cos(alpha - Math.PI / 2) + p.x;

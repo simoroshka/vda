@@ -1,8 +1,12 @@
 var position = null;
 var pointers = [];
 
-var cycleColors = ['#dc143c'];
+var edgeVisits = []; 
+var prevCon = null;
+
+var cycleColors = [];
 var loops = 0;
+var step = 0;
 
 function addToken(vertex) {
 	//remove existing agent
@@ -11,11 +15,11 @@ function addToken(vertex) {
 	}
 	
 	//add new one and erase previous states
-	vertex.tokens = 1;
-	
+	vertex.tokens = 1;	
 	position = vertex.id;
 	initializePointers();
-	
+	initializeEdges();
+		
 	graph.draw();
 	canvas.renderAll();
 }
@@ -26,10 +30,18 @@ function initializePointers () {
 	}
 	pointers[position] = 1;
 }
+function initializeEdges () {
+	edgeVisits = [];
+	
+	for (var i = 0; i < graph.edges.length; i++) {
+		edgeVisits[i] = 0;
+	}
+}
 function resetSimulation () {
 	getVertexByID(position, graph.vertices).tokens = 0;
 	position = null;
 	pointers = [];
+	initializeEdges();
 	
 	graph.draw();
 	canvas.renderAll();
@@ -57,11 +69,13 @@ function createExample (param) {
 function simulation () {
 	
 	calcConnectionPoints(); 
+	calcColors();
+	loops = step = 0;
 	
 	// calculate next state and fire the animations 
 		interval = setInterval(function() {
 	
-			
+			step++;
 			simpleAgentPropagation();
 			
 		}, 1200 / tokenSpeed);
@@ -73,7 +87,6 @@ function simulation () {
 function simpleAgentPropagation() {
 	
 	pointers[position]++;
-	
 	
 	var currentVertex = getVertexByID(position, graph.vertices);
 	
@@ -94,23 +107,53 @@ function simpleAgentPropagation() {
 }
 function drawPath(from, to) {
 	var edgeN;
+	var edgeID;
 	//find the necessary edge/neighbour number
 	for (var i = 0; i < from.neighbours.length; i++) {
 		if (to.id === from.neighbours[i].id) {
 			edgeN = i;
+			edgeID = from.edges[i].id;			
 			break;
 		}
 	}
-	
-	//this.inConnections[edgeN] = p1;
-	//this.outConnections[edgeN] = p2;	
-	
-	drawOuterConnection(from, edgeN);
+	var coef = 2 / nodeRadius;
+	var curvature = Math.floor(edgeVisits[edgeID] / 2) * coef + 0.12;
+	setColor();
 		
-	//function drawInnerConnection(vertex, conN) {
+	if (prevCon !== null) drawInnerConnection(from, prevCon, edgeN);	
 		
-		//uses coordinate points
-		//function drawConnection(from, to, middle) {
+	prevCon = drawOuterConnection(from, edgeN, curvature).edgeN;
+		
+	edgeVisits[edgeID]++;
+}
+
+// gradually change color of the path
+function setColor() {
+	//how often to change color
+	loops = Math.round(step / graph.vertices.length);
+	console.log(loops);
+}
+function calcColors() {
+	cycleColors = ['#BA3030'];
+	var colorStep = 0.05;
+	
+	// we are going to generate this many colors
+	for (var i = 0; i < 1 / colorStep; i++) {
+		var current = cycleColors[i];
+		current = hexToRgb(current);
+		var currentHsl = rgbToHsl(current.r, current.g, current.b);
+		//change hue
+		currentHsl[0] -= colorStep;
+		if (currentHsl[0] < 0) currentHsl[0] = 1 + currentHsl[0];
+		
+		//convert back
+		current = hslToRgb(currentHsl[0],currentHsl[1],currentHsl[2]);
+		current = rgbToHex(current[0], current[1], current[2]);
+		
+		cycleColors.push(current);
+		console.log(current);
+	}
+	
 }
 
 play = function () {
