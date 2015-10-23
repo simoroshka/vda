@@ -799,12 +799,12 @@ var nodeRadius = 15,	//default, changes according to the grid size
 		//delete it with splice
 		if (index > -1) {
 			graph.vertices.splice(index, 1);
-			graphTokens.splice(index, 1);					
+			if (typeof graphTokens !== 'undefined') graphTokens.splice(index, 1);					
 		}		
 		//change indexes so there is no holes
 		graph.reNumber(index);
 
-		updateGraphTokens();
+		if (typeof graphTokens !== 'undefined') updateGraphTokens();
 		resetSimulation();
 		
 	}
@@ -864,7 +864,7 @@ var nodeRadius = 15,	//default, changes according to the grid size
 	}
 	
 	// delete an edge
-	function deleteEdge() {
+	function deleteEdge(edge) {
 		
 		//delete from connected vertices
 		edge.from.deleteEdge(edge);

@@ -1,12 +1,17 @@
-var position = null;
+//onebit token propagation
+var agentMode = 0;
 var pointers = [];
+var shifts = [];
+var position = null;
 
+//visualization
 var edgeVisits = []; 
 var prevCon = null;
-
 var cycleColors = [];
 var loops = 0;
 var step = 0;
+
+
 
 function addToken(vertex) {
 	//remove existing agent
@@ -23,12 +28,15 @@ function addToken(vertex) {
 	graph.draw();
 	canvas.renderAll();
 }
+//initialize everything with zero,  
 function initializePointers () {
 	for (var i = 0; i < graph.vertices.length; i++) {
 		var id = graph.vertices[i].id;
 		pointers[id] = 0;
+		shifts[id] = 0;
+		agentMode = 0;
 	}
-	pointers[position] = 1;
+	//pointers[position] = 1;
 }
 function initializeEdges () {
 	edgeVisits = [];
@@ -38,7 +46,9 @@ function initializeEdges () {
 	}
 }
 function resetSimulation () {
-	getVertexByID(position, graph.vertices).tokens = 0;
+	var v = getVertexByID(position, graph.vertices);
+	if (typeof v !== 'undefined') v.tokens = 0
+	
 	position = null;
 	pointers = [];
 	initializeEdges();
@@ -76,7 +86,8 @@ function simulation () {
 		interval = setInterval(function() {
 	
 			step++;
-			simpleAgentPropagation();
+			//simpleAgentPropagation();
+			newAgentPropagation();
 			
 		}, 1200 / tokenSpeed);
 		
@@ -84,6 +95,56 @@ function simulation () {
  	
 }
 
+// one step of the simulation, takes current vertex, returns the outgoing port number
+function oneBit(v) {
+	var tmp;
+	
+	if (pointers[v.id] == 2 * v.degree) {
+		pointers[v.id] = 0;
+		stop();
+		return -1;
+	}
+	
+	if (!agentMode && pointers[v.id] <= v.degree) {
+		shifts[v.id] = pointers[v.id];
+	}
+	
+	pointers[v.id]++;
+	
+	if (pointers[v.id] >= 1 && pointers[v.id] <= v.degree) {
+		agentMode = 1;
+		tmp = pointers[v.id];
+	}
+	else {
+		agentMode = 0;
+		tmp = pointers[v.id] + shifts[v.id];
+		if (pointers[v.id] == 2 * v.degree && shifts[v.id] > 0) {
+			shifts[v.id] = 0;
+			pointers[v.id] = 0;
+		}
+	}
+	
+	return tmp % v.degree;	
+}
+function stop () {
+	//stop the simulation
+	pause();
+}
+function newAgentPropagation() {
+	var currentVertex = getVertexByID(position, graph.vertices);
+	
+	var port = oneBit(currentVertex);
+	if (port == -1) return;
+	
+	var nextVertex = currentVertex.neighbours[port];
+	
+	position = nextVertex.id;
+	currentVertex.tokens = 0;
+	nextVertex.tokens = 1;
+	animateTokens(currentVertex, nextVertex, 1);
+	//draw the path between
+	setTimeout(function() {drawPath(currentVertex, nextVertex);}, 1000 / tokenSpeed);
+}
 function simpleAgentPropagation() {
 	
 	pointers[position]++;
@@ -117,7 +178,18 @@ function drawPath(from, to) {
 		}
 	}
 	var coef = 2 / nodeRadius;
-	var curvature = Math.floor(edgeVisits[edgeID] / 2) * coef + 0.12;
+	var curvature;
+	
+	switch (edgeVisits[edgeID]) {
+		case 0: case 1: curvature = 0.05 + coef; break;
+		case 2: case 3: curvature = 0.3 + coef; break;
+		//case 4: case 5: curvature = 0.47 + coef; break;
+		default: {
+			//curvature = 0.47 + coef - (coef * 3 * Math.floor(edgeVisits[edgeID] / 2))/edgeVisits[edgeID]; break;
+			curvature =  0.22 * (Math.pow(1.2, -Math.floor(edgeVisits[edgeID] / 2))) + coef + 0.1;
+		}
+	}
+	
 	setColor();
 		
 	if (prevCon !== null) drawInnerConnection(from, prevCon, edgeN);	
@@ -131,7 +203,7 @@ function drawPath(from, to) {
 function setColor() {
 	//how often to change color
 	loops = Math.round(step / graph.vertices.length);
-	console.log(loops);
+	
 }
 function calcColors() {
 	cycleColors = ['#BA3030'];
@@ -151,7 +223,6 @@ function calcColors() {
 		current = rgbToHex(current[0], current[1], current[2]);
 		
 		cycleColors.push(current);
-		console.log(current);
 	}
 	
 }
