@@ -12,6 +12,68 @@ var loops = 0;
 var step = 0;
 
 
+// one step of the simulation, takes current vertex, returns the outgoing port number
+function oneBit(v) {
+	var tmp;
+	
+	if (pointers[v.id] == 2 * v.degree) {
+		pointers[v.id] = 0;
+		stop();
+		return -1;
+	}
+	
+	if (!agentMode && pointers[v.id] <= v.degree) {
+		shifts[v.id] = pointers[v.id];
+	}
+	
+	pointers[v.id]++;
+	
+	if (pointers[v.id] >= 1 && pointers[v.id] <= v.degree) {
+		agentMode = 1;
+		tmp = pointers[v.id];
+	}
+	else {
+		agentMode = 0;
+		tmp = pointers[v.id] + shifts[v.id];
+		if (pointers[v.id] == 2 * v.degree && shifts[v.id] > 0) {
+			shifts[v.id] = 0;
+			pointers[v.id] = 0;
+		}
+	}
+	
+	return tmp % v.degree;	
+}
+function stop () {
+	//stop the simulation
+	pause();
+}
+function newAgentPropagation() {
+	var currentVertex = getVertexByID(position, graph.vertices);
+	
+	var port = oneBit(currentVertex); //calculate next edge to follow
+	if (port == -1) return; //simulation has been stopped, exit
+	
+	var nextVertex = currentVertex.neighbours[port];
+	
+	position = nextVertex.id;
+	currentVertex.tokens = 0;
+	nextVertex.tokens = 1;
+	animateTokens(currentVertex, nextVertex, 1);
+	//draw the path between
+	setTimeout(function() {drawPath(currentVertex, nextVertex);}, 1000 / tokenSpeed);
+}
+//initialize everything with zero,  
+function initializePointers () {
+	for (var i = 0; i < graph.vertices.length; i++) {
+		var id = graph.vertices[i].id;
+		pointers[id] = 0;
+		shifts[id] = 0;
+		agentMode = 0;
+	}
+	//pointers[position] = 1;
+}
+
+
 
 function addToken(vertex) {
 	//remove existing agent
@@ -28,16 +90,7 @@ function addToken(vertex) {
 	graph.draw();
 	canvas.renderAll();
 }
-//initialize everything with zero,  
-function initializePointers () {
-	for (var i = 0; i < graph.vertices.length; i++) {
-		var id = graph.vertices[i].id;
-		pointers[id] = 0;
-		shifts[id] = 0;
-		agentMode = 0;
-	}
-	//pointers[position] = 1;
-}
+
 function initializeEdges () {
 	edgeVisits = [];
 	
@@ -95,56 +148,7 @@ function simulation () {
  	
 }
 
-// one step of the simulation, takes current vertex, returns the outgoing port number
-function oneBit(v) {
-	var tmp;
-	
-	if (pointers[v.id] == 2 * v.degree) {
-		pointers[v.id] = 0;
-		stop();
-		return -1;
-	}
-	
-	if (!agentMode && pointers[v.id] <= v.degree) {
-		shifts[v.id] = pointers[v.id];
-	}
-	
-	pointers[v.id]++;
-	
-	if (pointers[v.id] >= 1 && pointers[v.id] <= v.degree) {
-		agentMode = 1;
-		tmp = pointers[v.id];
-	}
-	else {
-		agentMode = 0;
-		tmp = pointers[v.id] + shifts[v.id];
-		if (pointers[v.id] == 2 * v.degree && shifts[v.id] > 0) {
-			shifts[v.id] = 0;
-			pointers[v.id] = 0;
-		}
-	}
-	
-	return tmp % v.degree;	
-}
-function stop () {
-	//stop the simulation
-	pause();
-}
-function newAgentPropagation() {
-	var currentVertex = getVertexByID(position, graph.vertices);
-	
-	var port = oneBit(currentVertex);
-	if (port == -1) return;
-	
-	var nextVertex = currentVertex.neighbours[port];
-	
-	position = nextVertex.id;
-	currentVertex.tokens = 0;
-	nextVertex.tokens = 1;
-	animateTokens(currentVertex, nextVertex, 1);
-	//draw the path between
-	setTimeout(function() {drawPath(currentVertex, nextVertex);}, 1000 / tokenSpeed);
-}
+
 function simpleAgentPropagation() {
 	
 	pointers[position]++;
