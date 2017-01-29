@@ -6,4 +6,4 @@ Supervisers: Jukka Suomela, Przemysław Uznański.
 
 The project is distributed under the MIT License.
 
-<a href="http://db.tt/LhsYJjTQ">Online Demo</a>
+<a href="http://research.cs.aalto.fi/da/rotor-router-demo/">Online Demo</a>
